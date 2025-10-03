@@ -2,25 +2,118 @@
 import { inject, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCheckStore } from '../stores/checkStore'
-import { FileChartPie, Calendar, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-vue-next'
+import {
+  FileChartPie,
+  Calendar,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Search,
+  X,
+} from 'lucide-vue-next'
+import SearchInput from '../components/SearchInput.vue'
+import FilterPanel from '../components/FilterPanel.vue'
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 const checkStore = useCheckStore()
 
+// Поиск
+const searchQuery = ref('')
+
+// Фильтры
+const filters = ref({
+  status: 'all',
+  dateRange: 'all',
+})
+
 // Пагинация
 const currentPage = ref(1)
 const itemsPerPage = 10
 
+const resetFilters = () => {
+  filters.value = { status: 'all', dateRange: 'all' } // если filters — ref
+  handleFiltersReset()
+}
+
+// Функция для фильтрации по дате
+const isInDateRange = (dateString: string, range: string) => {
+  if (range === 'all') return true
+
+  const date = new Date(dateString)
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+  switch (range) {
+    case 'today':
+      return date >= today
+    case 'week':
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return date >= weekAgo
+    case 'month':
+      const monthAgo = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate())
+      return date >= monthAgo
+    case 'quarter':
+      const quarterAgo = new Date(today.getFullYear(), today.getMonth() - 3, today.getDate())
+      return date >= quarterAgo
+    default:
+      return true
+  }
+}
+
+// Фильтрация результатов
+const filteredResults = computed(() => {
+  let results = checkStore.results
+
+  // Поиск по названию файла
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim()
+    results = results.filter((result) => result.fileName.toLowerCase().includes(query))
+  }
+
+  // Фильтр по статусу
+  if (filters.value.status !== 'all') {
+    results = results.filter((result) => result.status === filters.value.status)
+  }
+
+  // Фильтр по дате
+  if (filters.value.dateRange !== 'all') {
+    results = results.filter((result) => isInDateRange(result.uploadDate, filters.value.dateRange))
+  }
+
+  return results
+})
+
 const paginatedResults = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
   const end = start + itemsPerPage
-  return checkStore.results.slice(start, end)
+  return filteredResults.value.slice(start, end)
 })
 
 const totalPages = computed(() => {
-  return Math.ceil(checkStore.results.length / itemsPerPage)
+  return Math.ceil(filteredResults.value.length / itemsPerPage)
 })
+
+// Сброс пагинации при изменении поиска или фильтров
+const handleSearch = (query: string) => {
+  searchQuery.value = query
+  currentPage.value = 1
+}
+
+const handleClearSearch = () => {
+  searchQuery.value = ''
+  currentPage.value = 1
+}
+
+const handleFiltersChange = () => {
+  currentPage.value = 1
+}
+
+const handleFiltersReset = () => {
+  currentPage.value = 1
+}
+
+// ... existing code for other functions ...
 
 const viewResult = (resultId: string) => {
   router.push(`/result/${resultId}`)
@@ -140,6 +233,53 @@ const formatDateMobile = (dateString: string) => {
       </div>
     </div>
 
+    <!-- Search and Filters -->
+    <div v-if="checkStore.results.length > 0" class="mb-6 sm:mb-8 space-y-4">
+      <!-- Search -->
+      <div class="max-w-md mx-auto sm:mx-0">
+        <SearchInput
+          v-model="searchQuery"
+          placeholder="Поиск по названию файла..."
+          @search="handleSearch"
+          @clear="handleClearSearch"
+        >
+          <template #results-counter>
+            <Transition
+              enter-active-class="transition-all duration-200 ease-out"
+              enter-from-class="opacity-0 transform translate-y-1"
+              enter-to-class="opacity-100 transform translate-y-0"
+              leave-active-class="transition-all duration-150 ease-in"
+              leave-from-class="opacity-100 transform translate-y-0"
+              leave-to-class="opacity-0 transform translate-y-1"
+            >
+              <div
+                v-if="searchQuery && filteredResults.length !== checkStore.results.length"
+                :class="[
+                  'absolute top-full left-0 right-0 mt-2 px-3 py-2 text-xs rounded-lg z-10',
+                  isDarkMode
+                    ? 'bg-gray-800 text-gray-300 border border-gray-700'
+                    : 'bg-white text-gray-600 border border-gray-200',
+                ]"
+              >
+                <span v-if="filteredResults.length > 0">
+                  Найдено {{ filteredResults.length }} из
+                  {{ checkStore.results.length }} результатов
+                </span>
+                <span v-else class="text-red-500"> Ничего не найдено </span>
+              </div>
+            </Transition>
+          </template>
+        </SearchInput>
+      </div>
+
+      <!-- Filters -->
+      <FilterPanel
+        v-model="filters"
+        @update:modelValue="handleFiltersChange"
+        @reset="handleFiltersReset"
+      />
+    </div>
+
     <!-- Stats -->
     <div
       v-if="checkStore.results.length > 0"
@@ -169,10 +309,14 @@ const formatDateMobile = (dateString: string) => {
                 isDarkMode ? 'text-white' : 'text-gray-900',
               ]"
             >
-              {{ checkStore.results.length }}
+              {{ filteredResults.length }}
             </p>
             <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-              Всего проверок
+              {{
+                searchQuery || filters.status !== 'all' || filters.dateRange !== 'all'
+                  ? 'Найдено'
+                  : 'Всего проверок'
+              }}
             </p>
           </div>
         </div>
@@ -202,7 +346,7 @@ const formatDateMobile = (dateString: string) => {
                 isDarkMode ? 'text-white' : 'text-gray-900',
               ]"
             >
-              {{ checkStore.results.filter((r) => r.status === 'compliant').length }}
+              {{ filteredResults.filter((r) => r.status === 'compliant').length }}
             </p>
             <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
               Соответствуют
@@ -235,7 +379,7 @@ const formatDateMobile = (dateString: string) => {
                 isDarkMode ? 'text-white' : 'text-gray-900',
               ]"
             >
-              {{ checkStore.results.filter((r) => r.status === 'non-compliant').length }}
+              {{ filteredResults.filter((r) => r.status === 'non-compliant').length }}
             </p>
             <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
               Не соответствуют
@@ -246,7 +390,7 @@ const formatDateMobile = (dateString: string) => {
     </div>
 
     <!-- Results List -->
-    <div v-if="checkStore.results.length > 0" class="space-y-3 sm:space-y-4">
+    <div v-if="filteredResults.length > 0" class="space-y-3 sm:space-y-4">
       <div
         v-for="result in paginatedResults"
         :key="result.id"
@@ -420,8 +564,60 @@ const formatDateMobile = (dateString: string) => {
       </div>
     </div>
 
+    <!-- No Search Results -->
+    <div
+      v-else-if="
+        (searchQuery || filters.status !== 'all' || filters.dateRange !== 'all') &&
+        filteredResults.length === 0
+      "
+      class="p-8 sm:p-12 text-center"
+    >
+      <div :class="['mb-4', isDarkMode ? 'text-gray-600' : 'text-gray-400']">
+        <Search class="w-12 h-12 sm:w-16 sm:h-16 mx-auto" />
+      </div>
+      <h3
+        :class="[
+          'text-lg sm:text-xl font-medium mb-2',
+          isDarkMode ? 'text-gray-300' : 'text-gray-900',
+        ]"
+      >
+        Ничего не найдено
+      </h3>
+      <p :class="['text-sm mb-6', isDarkMode ? 'text-gray-500' : 'text-gray-600']">
+        Попробуйте изменить поисковый запрос или настройки фильтров
+      </p>
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <button
+          v-if="searchQuery"
+          @click="handleClearSearch"
+          :class="[
+            'inline-flex items-center justify-center px-6 py-3 rounded-lg transition-colors font-medium min-h-[44px]',
+            isDarkMode
+              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+          ]"
+        >
+          <X class="w-5 h-5 mr-2" />
+          Очистить поиск
+        </button>
+        <button
+          v-if="filters.status !== 'all' || filters.dateRange !== 'all'"
+          @click="resetFilters"
+          :class="[
+            'inline-flex items-center justify-center px-6 py-3 rounded-lg transition-colors font-medium min-h-[44px]',
+            isDarkMode
+              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+          ]"
+        >
+          <X class="w-5 h-5 mr-2" />
+          Сбросить фильтры
+        </button>
+      </div>
+    </div>
+
     <!-- Empty State -->
-    <div v-if="checkStore.results.length === 0" class="p-8 sm:p-12 text-center">
+    <div v-else-if="checkStore.results.length === 0" class="p-8 sm:p-12 text-center">
       <div :class="['mb-4', isDarkMode ? 'text-gray-600' : 'text-gray-400']">
         <FileChartPie class="w-12 h-12 sm:w-16 sm:h-16 mx-auto" />
       </div>
