@@ -10,15 +10,18 @@ import { ChartColumnIncreasing } from 'lucide-vue-next'
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 
-const handleFileChecked = (result: CheckResult) => {
-  console.log('HomePage: Received result:', result) // Отладка
+const handleFilesChecked = (results: CheckResult[]) => {
+  console.log('HomePage: Received results:', results) // Отладка
 
-  // Добавляем результат в store
-  addCheckResult(result)
-  console.log('HomePage: Result added to store, navigating to:', `/result/${result.id}`) // Отладка
+  // Добавляем все результаты в store
+  results.forEach((result) => {
+    addCheckResult(result)
+  })
 
-  // Перенаправляем на страницу результата
-  router.push(`/result/${result.id}`)
+  console.log('HomePage: All results added to store, navigating to history') // Отладка
+
+  // Перенаправляем на страницу истории
+  router.push('/history')
 }
 </script>
 
@@ -41,7 +44,7 @@ const handleFileChecked = (result: CheckResult) => {
             isDarkMode ? 'text-gray-400' : 'text-gray-600',
           ]"
         >
-          Загрузите документ для проверки соответствия ГОСТ стандартам
+          Загрузите документы для проверки соответствия ГОСТ стандартам
         </p>
       </div>
 
@@ -115,7 +118,7 @@ const handleFileChecked = (result: CheckResult) => {
               isDarkMode ? 'text-gray-200' : 'text-gray-900',
             ]"
           >
-            Поддержка форматов
+            Множественная загрузка
           </h3>
           <p
             :class="[
@@ -171,7 +174,7 @@ const handleFileChecked = (result: CheckResult) => {
 
     <!-- File Upload Section -->
     <div class="max-w-sm sm:max-w-md lg:max-w-2xl mx-auto">
-      <FileUpload @file-checked="handleFileChecked" />
+      <FileUpload @files-checked="handleFilesChecked" />
     </div>
   </div>
 </template>

@@ -80,6 +80,20 @@ onMounted(() => {
           <span>TECHNICAL DOCUMENTATION ANALYSIS SYSTEM</span>
           <div class="w-2 h-2 bg-current rounded-full"></div>
         </div>
+
+        <div class="mt-2">
+          <a
+            href="/developers"
+            :class="[
+              'text-xs font-mono transition-opacity hover:opacity-75',
+              isDarkMode
+                ? 'text-gray-500 hover:text-gray-400'
+                : 'text-gray-400 hover:text-gray-500',
+            ]"
+          >
+            Developed by M2 Syndicate [HDD]
+          </a>
+        </div>
       </div>
     </div>
   </div>

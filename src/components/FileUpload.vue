@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, inject } from 'vue'
-import { CloudUpload, CloudUploadIcon } from 'lucide-vue-next'
+import { ref, inject, computed } from 'vue'
+import { CloudUpload, FileText, X, CheckCircle, Clock, AlertCircle } from 'lucide-vue-next'
 
 interface CheckResult {
   id: string
@@ -17,16 +17,36 @@ interface CheckResult {
   complianceScore: number
 }
 
+interface FileItem {
+  file: File
+  id: string
+  status: 'pending' | 'checking' | 'completed'
+  result?: CheckResult
+}
+
 const emit = defineEmits<{
-  fileChecked: [result: CheckResult]
+  filesChecked: [results: CheckResult[]]
 }>()
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const isDragOver = ref(false)
 const isChecking = ref(false)
-const uploadedFile = ref<File | null>(null)
+const uploadedFiles = ref<FileItem[]>([])
 
 const acceptedFormats = ['.pdf', '.dwg', '.dxf', '.step', '.stp']
+
+// Вычисляемые свойства для прогресса
+const totalFiles = computed(() => uploadedFiles.value.length)
+const completedFiles = computed(
+  () => uploadedFiles.value.filter((f) => f.status === 'completed').length,
+)
+const checkingFiles = computed(
+  () => uploadedFiles.value.filter((f) => f.status === 'checking').length,
+)
+const progressPercentage = computed(() => {
+  if (totalFiles.value === 0) return 0
+  return Math.round((completedFiles.value / totalFiles.value) * 100)
+})
 
 const handleDragOver = (e: DragEvent) => {
   e.preventDefault()
@@ -43,76 +63,150 @@ const handleDrop = (e: DragEvent) => {
 
   const files = e.dataTransfer?.files
   if (files && files.length > 0) {
-    handleFileSelect(files[0])
+    handleFileSelect(Array.from(files))
   }
 }
 
 const handleFileInput = (e: Event) => {
   const target = e.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    handleFileSelect(target.files[0])
+    handleFileSelect(Array.from(target.files))
   }
 }
 
-const handleFileSelect = (file: File) => {
-  const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+const handleFileSelect = (files: File[]) => {
+  const validFiles = files.filter((file) => {
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
+    return acceptedFormats.includes(fileExtension)
+  })
 
-  if (!acceptedFormats.includes(fileExtension)) {
-    alert('Неподдерживаемый формат файла. Поддерживаются: ' + acceptedFormats.join(', '))
-    return
+  if (validFiles.length !== files.length) {
+    const invalidCount = files.length - validFiles.length
+    alert(`${invalidCount} файлов пропущено. Поддерживаемые форматы: ${acceptedFormats.join(', ')}`)
   }
 
-  uploadedFile.value = file
-  console.log('FileUpload: File selected:', file.name) // Отладка
+  const newFiles: FileItem[] = validFiles.map((file) => ({
+    file,
+    id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    status: 'pending',
+  }))
+
+  uploadedFiles.value = [...uploadedFiles.value, ...newFiles]
+  console.log(
+    'FileUpload: Files selected:',
+    validFiles.map((f) => f.name),
+  )
+}
+
+const removeFile = (fileId: string) => {
+  uploadedFiles.value = uploadedFiles.value.filter((f) => f.id !== fileId)
+}
+
+const removeAllFiles = () => {
+  uploadedFiles.value = []
 }
 
 const startCheck = async () => {
-  if (!uploadedFile.value) return
+  if (uploadedFiles.value.length === 0) return
 
-  console.log('FileUpload: Starting check for:', uploadedFile.value.name) // Отладка
+  console.log('FileUpload: Starting check for', uploadedFiles.value.length, 'files')
   isChecking.value = true
 
-  // Симуляция проверки
-  await new Promise((resolve) => setTimeout(resolve, 3000))
+  const results: CheckResult[] = []
 
-  // Генерируем уникальный ID
-  const resultId = `check_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  // Обрабатываем файлы по одному
+  for (const fileItem of uploadedFiles.value) {
+    fileItem.status = 'checking'
 
-  const result: CheckResult = {
-    id: resultId,
-    fileName: uploadedFile.value.name,
-    fileType: uploadedFile.value.name.split('.').pop()?.toUpperCase() || 'Unknown',
-    uploadDate: new Date().toISOString(),
-    status: Math.random() > 0.5 ? 'compliant' : 'non-compliant',
-    violations:
-      Math.random() > 0.5
-        ? []
-        : [
-            {
-              gostNumber: 'ГОСТ 2.305-2008',
-              section: 'п. 4.2.1',
-              description: 'Отсутствует основная надпись',
-              severity: 'critical',
-            },
-            {
-              gostNumber: 'ГОСТ 2.316-2008',
-              section: 'п. 3.1',
-              description: 'Неправильное обозначение шероховатости',
-              severity: 'warning',
-            },
-          ],
-    complianceScore: Math.floor(Math.random() * 40) + 60,
+    // Симуляция проверки (2-4 секунды на файл)
+    const checkTime = Math.random() * 2000 + 2000
+    await new Promise((resolve) => setTimeout(resolve, checkTime))
+
+    // Генерируем результат
+    const resultId = `check_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    const result: CheckResult = {
+      id: resultId,
+      fileName: fileItem.file.name,
+      fileType: fileItem.file.name.split('.').pop()?.toUpperCase() || 'Unknown',
+      uploadDate: new Date().toISOString(),
+      status: Math.random() > 0.3 ? 'compliant' : 'non-compliant',
+      violations:
+        Math.random() > 0.4
+          ? []
+          : [
+              {
+                gostNumber: 'ГОСТ 2.305-2008',
+                section: 'п. 4.2.1',
+                description: 'Отсутствует основная надпись',
+                severity: 'critical',
+              },
+              {
+                gostNumber: 'ГОСТ 2.316-2008',
+                section: 'п. 3.1',
+                description: 'Неправильное обозначение шероховатости',
+                severity: 'warning',
+              },
+            ],
+      complianceScore: Math.floor(Math.random() * 40) + 60,
+    }
+
+    fileItem.result = result
+    fileItem.status = 'completed'
+    results.push(result)
+
+    console.log('FileUpload: Completed check for:', fileItem.file.name)
   }
 
-  console.log('FileUpload: Check completed, result:', result)
+  console.log('FileUpload: All checks completed, results:', results)
   isChecking.value = false
 
-  // Эмитим результат
-  emit('fileChecked', result)
+  // Эмитим все результаты
+  emit('filesChecked', results)
 }
 
-const removeFile = () => {
-  uploadedFile.value = null
+const getFileIcon = (fileName: string) => {
+  const extension = fileName.split('.').pop()?.toLowerCase()
+  return FileText // Можно добавить разные иконки для разных типов файлов
+}
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'pending':
+      return Clock
+    case 'checking':
+      return Clock
+    case 'completed':
+      return CheckCircle
+    default:
+      return Clock
+  }
+}
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'pending':
+      return isDarkMode.value ? 'text-gray-400' : 'text-gray-500'
+    case 'checking':
+      return isDarkMode.value ? 'text-blue-400' : 'text-blue-600'
+    case 'completed':
+      return isDarkMode.value ? 'text-green-400' : 'text-green-600'
+    default:
+      return isDarkMode.value ? 'text-gray-400' : 'text-gray-500'
+  }
+}
+
+const getStatusText = (fileItem: FileItem) => {
+  switch (fileItem.status) {
+    case 'pending':
+      return 'Ожидает'
+    case 'checking':
+      return 'Проверяется...'
+    case 'completed':
+      return fileItem.result?.status === 'compliant' ? 'Соответствует' : 'Не соответствует'
+    default:
+      return 'Ожидает'
+  }
 }
 </script>
 
@@ -125,32 +219,47 @@ const removeFile = () => {
   >
     <!-- Заголовок -->
     <div :class="['p-4 sm:p-6 border-b', isDarkMode ? 'border-gray-700' : 'border-gray-200']">
-      <div class="flex items-center space-x-3">
-        <div
-          :class="[
-            'w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center',
-            isDarkMode ? 'bg-blue-600' : 'bg-blue-600',
-          ]"
-        >
-          <CloudUpload
-            class="w-4 h-4 sm:w-5 sm:h-5 text-white"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          />
-        </div>
-        <div>
-          <h2
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div
             :class="[
-              'text-lg sm:text-xl font-semibold',
-              isDarkMode ? 'text-white' : 'text-gray-900',
+              'w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center',
+              isDarkMode ? 'bg-blue-600' : 'bg-blue-600',
             ]"
           >
-            Загрузка документа
-          </h2>
-          <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-            PDF, DWG, DXF, STEP
-          </p>
+            <CloudUpload
+              class="w-4 h-4 sm:w-5 sm:h-5 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            />
+          </div>
+          <div>
+            <h2
+              :class="[
+                'text-lg sm:text-xl font-semibold',
+                isDarkMode ? 'text-white' : 'text-gray-900',
+              ]"
+            >
+              Загрузка документов
+            </h2>
+            <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+              PDF, DWG, DXF, STEP
+            </p>
+          </div>
+        </div>
+
+        <!-- Счетчик файлов -->
+        <div v-if="uploadedFiles.length > 0" class="text-right">
+          <div :class="['text-sm font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
+            {{ uploadedFiles.length }} файлов
+          </div>
+          <div
+            v-if="isChecking"
+            :class="['text-xs', isDarkMode ? 'text-gray-400' : 'text-gray-600']"
+          >
+            {{ completedFiles }}/{{ totalFiles }} готово
+          </div>
         </div>
       </div>
     </div>
@@ -158,7 +267,7 @@ const removeFile = () => {
     <div class="p-4 sm:p-6">
       <!-- Зона загрузки -->
       <div
-        v-if="!uploadedFile"
+        v-if="uploadedFiles.length === 0"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
         @drop="handleDrop"
@@ -182,15 +291,16 @@ const removeFile = () => {
             isDarkMode ? 'text-gray-200' : 'text-gray-900',
           ]"
         >
-          <span class="hidden sm:inline">Перетащите файл сюда</span>
-          <span class="sm:hidden">Выберите файл</span>
+          <span class="hidden sm:inline">Перетащите файлы сюда</span>
+          <span class="sm:hidden">Выберите файлы</span>
         </h3>
         <p :class="['mb-3 sm:mb-4 text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-          <span class="hidden sm:inline">или нажмите для выбора файла</span>
-          <span class="sm:hidden">Поддерживаемые форматы</span>
+          <span class="hidden sm:inline">или нажмите для выбора файлов</span>
+          <span class="sm:hidden">Можно выбрать несколько</span>
         </p>
         <input
           type="file"
+          multiple
           :accept="acceptedFormats.join(',')"
           @change="handleFileInput"
           class="hidden"
@@ -213,78 +323,144 @@ const removeFile = () => {
               d="M12 6v6m0 0v6m0-6h6m-6 0H6"
             />
           </svg>
-          Выбрать файл
+          Выбрать файлы
         </label>
       </div>
 
-      <!-- Загруженный файл -->
+      <!-- Список загруженных файлов -->
       <div v-else class="space-y-3 sm:space-y-4">
-        <div
-          :class="[
-            'flex items-center justify-between p-3 sm:p-4 rounded-lg',
-            isDarkMode ? 'bg-gray-700/50' : 'bg-gray-50',
-          ]"
-        >
-          <div class="flex items-center space-x-3 min-w-0 flex-1">
-            <div
-              :class="[
-                'w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0',
-                isDarkMode ? 'bg-blue-600' : 'bg-blue-100',
-              ]"
-            >
-              <svg
-                :class="['w-4 h-4 sm:w-6 sm:h-6', isDarkMode ? 'text-white' : 'text-blue-600']"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <div class="min-w-0 flex-1">
-              <p
-                :class="[
-                  'font-medium text-sm sm:text-base truncate',
-                  isDarkMode ? 'text-gray-200' : 'text-gray-900',
-                ]"
-              >
-                {{ uploadedFile.name }}
-              </p>
-              <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-                {{ (uploadedFile.size / 1024 / 1024).toFixed(2) }} МБ
-              </p>
-            </div>
+        <!-- Прогресс бар -->
+        <div v-if="isChecking" class="space-y-2">
+          <div class="flex justify-between text-sm">
+            <span :class="[isDarkMode ? 'text-gray-300' : 'text-gray-700']">
+              Обработка файлов...
+            </span>
+            <span :class="[isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+              {{ progressPercentage }}%
+            </span>
           </div>
-          <button
-            @click="removeFile"
+          <div
             :class="[
-              'transition-colors p-1 flex-shrink-0 ml-2',
-              isDarkMode ? 'text-gray-500 hover:text-red-400' : 'text-gray-400 hover:text-red-500',
+              'w-full bg-gray-200 rounded-full h-2',
+              isDarkMode ? 'bg-gray-700' : 'bg-gray-200',
             ]"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+            <div
+              class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              :style="{ width: `${progressPercentage}%` }"
+            ></div>
+          </div>
         </div>
 
-        <!-- Кнопка проверки -->
-        <button
-          @click="startCheck"
-          :disabled="isChecking"
-          class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base min-h-[44px]"
-        >
-          <div v-if="isChecking" class="flex items-center justify-center">
+        <!-- Список файлов -->
+        <div class="space-y-2 max-h-64 overflow-y-auto">
+          <div
+            v-for="fileItem in uploadedFiles"
+            :key="fileItem.id"
+            :class="[
+              'flex items-center justify-between p-3 rounded-lg border transition-all',
+              isDarkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50 border-gray-200',
+              fileItem.status === 'checking' ? 'ring-2 ring-blue-500/20' : '',
+            ]"
+          >
+            <div class="flex items-center space-x-3 min-w-0 flex-1">
+              <div
+                :class="[
+                  'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
+                  fileItem.status === 'checking'
+                    ? isDarkMode
+                      ? 'bg-blue-600'
+                      : 'bg-blue-100'
+                    : fileItem.status === 'completed'
+                      ? fileItem.result?.status === 'compliant'
+                        ? isDarkMode
+                          ? 'bg-green-600'
+                          : 'bg-green-100'
+                        : isDarkMode
+                          ? 'bg-red-600'
+                          : 'bg-red-100'
+                      : isDarkMode
+                        ? 'bg-gray-600'
+                        : 'bg-gray-200',
+                ]"
+              >
+                <component
+                  :is="fileItem.status === 'checking' ? Clock : getFileIcon(fileItem.file.name)"
+                  :class="[
+                    'w-4 h-4',
+                    fileItem.status === 'checking'
+                      ? isDarkMode
+                        ? 'text-white animate-spin'
+                        : 'text-blue-600 animate-spin'
+                      : fileItem.status === 'completed'
+                        ? fileItem.result?.status === 'compliant'
+                          ? isDarkMode
+                            ? 'text-white'
+                            : 'text-green-600'
+                          : isDarkMode
+                            ? 'text-white'
+                            : 'text-red-600'
+                        : isDarkMode
+                          ? 'text-gray-400'
+                          : 'text-gray-600',
+                  ]"
+                />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p
+                  :class="[
+                    'font-medium text-sm truncate',
+                    isDarkMode ? 'text-gray-200' : 'text-gray-900',
+                  ]"
+                >
+                  {{ fileItem.file.name }}
+                </p>
+                <div class="flex items-center space-x-2 mt-1">
+                  <span :class="['text-xs', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+                    {{ (fileItem.file.size / 1024 / 1024).toFixed(2) }} МБ
+                  </span>
+                  <span :class="['text-xs', getStatusColor(fileItem.status)]">
+                    {{ getStatusText(fileItem) }}
+                  </span>
+                  <span
+                    v-if="fileItem.result"
+                    :class="['text-xs font-medium', isDarkMode ? 'text-gray-300' : 'text-gray-700']"
+                  >
+                    {{ fileItem.result.complianceScore }}%
+                  </span>
+                </div>
+              </div>
+            </div>
+            <button
+              v-if="!isChecking"
+              @click="removeFile(fileItem.id)"
+              :class="[
+                'transition-colors p-1 flex-shrink-0 ml-2',
+                isDarkMode
+                  ? 'text-gray-500 hover:text-red-400'
+                  : 'text-gray-400 hover:text-red-500',
+              ]"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Кнопки действий -->
+        <div class="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <button
+            v-if="!isChecking"
+            @click="startCheck"
+            :disabled="uploadedFiles.length === 0"
+            class="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base min-h-[44px]"
+          >
+            Запустить анализ ({{ uploadedFiles.length }})
+          </button>
+
+          <div
+            v-else
+            class="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg font-medium text-sm sm:text-base min-h-[44px] flex items-center justify-center"
+          >
             <svg
               class="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white"
               fill="none"
@@ -304,10 +480,54 @@ const removeFile = () => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            <span class="text-sm sm:text-base">Анализ документа...</span>
+            <span
+              >Анализ файлов... ({{
+                checkingFiles.length > 0 ? checkingFiles.length : completedFiles
+              }}/{{ totalFiles }})</span
+            >
           </div>
-          <span v-else class="text-sm sm:text-base">Запустить анализ</span>
-        </button>
+
+          <!-- Дополнительные кнопки -->
+          <input
+            type="file"
+            multiple
+            :accept="acceptedFormats.join(',')"
+            @change="handleFileInput"
+            class="hidden"
+            id="add-files-input"
+          />
+          <label
+            v-if="!isChecking"
+            for="add-files-input"
+            class="inline-flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors font-medium text-sm sm:text-base min-h-[44px]"
+          >
+            <svg
+              class="w-4 h-4 sm:w-5 sm:h-5 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+              />
+            </svg>
+            <span class="hidden sm:inline">Добавить</span>
+            <span class="sm:hidden">Добавить</span>
+          </label>
+
+          <button
+            v-if="!isChecking"
+            @click="removeAllFiles"
+            class="inline-flex items-center justify-center px-4 py-3 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-medium text-sm sm:text-base min-h-[44px]"
+          >
+            <X class="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+            <span class="hidden sm:inline">Очистить</span>
+            <span class="sm:hidden">Очистить</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
