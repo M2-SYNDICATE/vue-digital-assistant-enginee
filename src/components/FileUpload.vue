@@ -63,21 +63,26 @@ const handleFileSelect = (file: File) => {
   }
 
   uploadedFile.value = file
+  console.log('FileUpload: File selected:', file.name) // Отладка
 }
 
 const startCheck = async () => {
   if (!uploadedFile.value) return
 
+  console.log('FileUpload: Starting check for:', uploadedFile.value.name) // Отладка
   isChecking.value = true
 
   // Симуляция проверки
   await new Promise((resolve) => setTimeout(resolve, 3000))
 
+  // Генерируем уникальный ID
+  const resultId = `check_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
   const result: CheckResult = {
-    id: Date.now().toString(),
+    id: resultId,
     fileName: uploadedFile.value.name,
     fileType: uploadedFile.value.name.split('.').pop()?.toUpperCase() || 'Unknown',
-    uploadDate: new Date().toLocaleString('ru-RU'),
+    uploadDate: new Date().toISOString(),
     status: Math.random() > 0.5 ? 'compliant' : 'non-compliant',
     violations:
       Math.random() > 0.5
@@ -90,7 +95,7 @@ const startCheck = async () => {
               severity: 'critical',
             },
             {
-              gostNumber: 'ГОС�� 2.316-2008',
+              gostNumber: 'ГОСТ 2.316-2008',
               section: 'п. 3.1',
               description: 'Неправильное обозначение шероховатости',
               severity: 'warning',
@@ -99,7 +104,10 @@ const startCheck = async () => {
     complianceScore: Math.floor(Math.random() * 40) + 60,
   }
 
+  console.log('FileUpload: Check completed, result:', result)
   isChecking.value = false
+
+  // Эмитим результат
   emit('fileChecked', result)
 }
 
@@ -116,34 +124,38 @@ const removeFile = () => {
     ]"
   >
     <!-- Заголовок -->
-    <div :class="['p-6 border-b', isDarkMode ? 'border-gray-700' : 'border-gray-200']">
+    <div :class="['p-4 sm:p-6 border-b', isDarkMode ? 'border-gray-700' : 'border-gray-200']">
       <div class="flex items-center space-x-3">
         <div
           :class="[
-            'w-8 h-8 rounded-lg flex items-center justify-center',
+            'w-6 h-6 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center',
             isDarkMode ? 'bg-blue-600' : 'bg-blue-600',
           ]"
         >
           <CloudUpload
-            class="w-5 h-5 text-white"
+            class="w-4 h-4 sm:w-5 sm:h-5 text-white"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
-          >
-          </CloudUpload>
+          />
         </div>
         <div>
-          <h2 :class="['text-xl font-semibold', isDarkMode ? 'text-white' : 'text-gray-900']">
+          <h2
+            :class="[
+              'text-lg sm:text-xl font-semibold',
+              isDarkMode ? 'text-white' : 'text-gray-900',
+            ]"
+          >
             Загрузка документа
           </h2>
-          <p :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+          <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
             PDF, DWG, DXF, STEP
           </p>
         </div>
       </div>
     </div>
 
-    <div class="p-6">
+    <div class="p-4 sm:p-6">
       <!-- Зона загрузки -->
       <div
         v-if="!uploadedFile"
@@ -151,7 +163,7 @@ const removeFile = () => {
         @dragleave="handleDragLeave"
         @drop="handleDrop"
         :class="[
-          'border-2 border-dashed rounded-lg p-8 text-center transition-all duration-300',
+          'border-2 border-dashed rounded-lg p-6 sm:p-8 text-center transition-all duration-300',
           isDragOver
             ? isDarkMode
               ? 'border-blue-500 bg-blue-500/10'
@@ -161,14 +173,21 @@ const removeFile = () => {
               : 'border-gray-300 hover:border-gray-400',
         ]"
       >
-        <div :class="['mb-4', isDarkMode ? 'text-gray-500' : 'text-gray-400']">
-          <CloudUpload class="w-12 h-12 mx-auto"> </CloudUpload>
+        <div :class="['mb-3 sm:mb-4', isDarkMode ? 'text-gray-500' : 'text-gray-400']">
+          <CloudUpload class="w-10 h-10 sm:w-12 sm:h-12 mx-auto" />
         </div>
-        <h3 :class="['text-lg font-medium mb-2', isDarkMode ? 'text-gray-200' : 'text-gray-900']">
-          Перетащите файл сюда
+        <h3
+          :class="[
+            'text-base sm:text-lg font-medium mb-2',
+            isDarkMode ? 'text-gray-200' : 'text-gray-900',
+          ]"
+        >
+          <span class="hidden sm:inline">Перетащите файл сюда</span>
+          <span class="sm:hidden">Выберите файл</span>
         </h3>
-        <p :class="['mb-4', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-          или нажмите для выбора файла
+        <p :class="['mb-3 sm:mb-4 text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+          <span class="hidden sm:inline">или нажмите для выбора файла</span>
+          <span class="sm:hidden">Поддерживаемые форматы</span>
         </p>
         <input
           type="file"
@@ -179,9 +198,14 @@ const removeFile = () => {
         />
         <label
           for="file-input"
-          class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors font-medium"
+          class="inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors font-medium text-sm sm:text-base min-h-[44px] w-full sm:w-auto"
         >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            class="w-4 h-4 sm:w-5 sm:h-5 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -194,22 +218,22 @@ const removeFile = () => {
       </div>
 
       <!-- Загруженный файл -->
-      <div v-else class="space-y-4">
+      <div v-else class="space-y-3 sm:space-y-4">
         <div
           :class="[
-            'flex items-center justify-between p-4 rounded-lg',
+            'flex items-center justify-between p-3 sm:p-4 rounded-lg',
             isDarkMode ? 'bg-gray-700/50' : 'bg-gray-50',
           ]"
         >
-          <div class="flex items-center space-x-3">
+          <div class="flex items-center space-x-3 min-w-0 flex-1">
             <div
               :class="[
-                'w-10 h-10 rounded-lg flex items-center justify-center',
+                'w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0',
                 isDarkMode ? 'bg-blue-600' : 'bg-blue-100',
               ]"
             >
               <svg
-                :class="['w-6 h-6', isDarkMode ? 'text-white' : 'text-blue-600']"
+                :class="['w-4 h-4 sm:w-6 sm:h-6', isDarkMode ? 'text-white' : 'text-blue-600']"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -222,11 +246,16 @@ const removeFile = () => {
                 />
               </svg>
             </div>
-            <div>
-              <p :class="['font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-900']">
+            <div class="min-w-0 flex-1">
+              <p
+                :class="[
+                  'font-medium text-sm sm:text-base truncate',
+                  isDarkMode ? 'text-gray-200' : 'text-gray-900',
+                ]"
+              >
                 {{ uploadedFile.name }}
               </p>
-              <p :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+              <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
                 {{ (uploadedFile.size / 1024 / 1024).toFixed(2) }} МБ
               </p>
             </div>
@@ -234,7 +263,7 @@ const removeFile = () => {
           <button
             @click="removeFile"
             :class="[
-              'transition-colors',
+              'transition-colors p-1 flex-shrink-0 ml-2',
               isDarkMode ? 'text-gray-500 hover:text-red-400' : 'text-gray-400 hover:text-red-500',
             ]"
           >
@@ -253,10 +282,14 @@ const removeFile = () => {
         <button
           @click="startCheck"
           :disabled="isChecking"
-          class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base min-h-[44px]"
         >
           <div v-if="isChecking" class="flex items-center justify-center">
-            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+            <svg
+              class="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
               <circle
                 class="opacity-25"
                 cx="12"
@@ -271,9 +304,9 @@ const removeFile = () => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            Анализ документа...
+            <span class="text-sm sm:text-base">Анализ документа...</span>
           </div>
-          <span v-else>Запустить анализ</span>
+          <span v-else class="text-sm sm:text-base">Запустить анализ</span>
         </button>
       </div>
     </div>

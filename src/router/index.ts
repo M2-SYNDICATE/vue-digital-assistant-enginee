@@ -23,10 +23,16 @@ const router = createRouter({
       component: () => import('@/pages/HistoryPage.vue'),
       meta: { requiresAuth: true },
     },
-    // Перенаправление на логин для всех неизвестных маршрутов
+    {
+      path: '/result/:id',
+      name: 'result',
+      component: () => import('@/pages/ResultPage.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
     {
       path: '/:pathMatch(.*)*',
-      redirect: '/login',
+      redirect: '/',
     },
   ],
 })
