@@ -31,6 +31,13 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/developers',
+      name: 'devepopers',
+      component: () => import('@/pages/DevelopersPage.vue'),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },
