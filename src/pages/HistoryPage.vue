@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { inject, ref, computed } from 'vue'
+import { inject, ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useCheckStore } from '../stores/checkStore'
 import {
   FileChartPie,
   Calendar,
@@ -13,30 +12,85 @@ import {
 } from 'lucide-vue-next'
 import SearchInput from '../components/SearchInput.vue'
 import FilterPanel from '../components/FilterPanel.vue'
+import { api, handleApiError, type HistoryItem, type ErrorCounts } from '@/services/api'
+
+// Типы, специфичные для UI (не дублируем HistoryItem из API)
+interface CheckResult {
+  id: string
+  fileName: string
+  fileType: string
+  uploadDate: string
+  status: 'checking' | 'compliant' | 'non-compliant'
+  violations: never[] // пустой массив, так как детали нарушений не приходят в истории
+  complianceScore: number
+  totalViolations: number
+  errorCounts: ErrorCounts
+}
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
-const checkStore = useCheckStore()
 
-// Поиск
+// Хранилище результатов
+const results = ref<CheckResult[]>([])
+
+// Поиск и фильтры
 const searchQuery = ref('')
-
-// Фильтры
 const filters = ref({
   status: 'all',
   dateRange: 'all',
 })
 
-// Пагинация
-const currentPage = ref(1)
-const itemsPerPage = 10
+// Загрузка
+const isLoading = ref(false)
 
+// Загрузка истории из API
+const loadHistory = async () => {
+  isLoading.value = true
+  try {
+    const history = await api.getHistory()
+
+    const transformedResults = history.map((item): CheckResult => {
+      const maxScore = 100
+      const violationPenalty = item.total_violations * 2
+      const calculatedScore = Math.max(0, maxScore - violationPenalty)
+
+      return {
+        id: item.doc_id.toString(),
+        fileName: item.filename,
+        fileType: item.filename.split('.').pop()?.toUpperCase() || 'Unknown',
+        uploadDate: item.upload_date,
+        status: item.total_violations > 0 ? 'non-compliant' : 'compliant',
+        violations: [],
+        complianceScore: calculatedScore,
+        totalViolations: item.total_violations,
+        errorCounts: item.error_counts,
+      }
+    })
+
+    transformedResults.sort((a, b) => {
+      return new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
+    })
+
+    results.value = transformedResults
+  } catch (error) {
+    console.error('Error loading history:', error)
+    const errorMessage = handleApiError(error)
+    alert(`Ошибка загрузки истории: ${errorMessage}`)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadHistory()
+})
+
+// Функции управления фильтрами и поиском
 const resetFilters = () => {
-  filters.value = { status: 'all', dateRange: 'all' } // если filters — ref
+  filters.value = { status: 'all', dateRange: 'all' }
   handleFiltersReset()
 }
 
-// Функция для фильтрации по дате
 const isInDateRange = (dateString: string, range: string) => {
   if (range === 'all') return true
 
@@ -61,28 +115,33 @@ const isInDateRange = (dateString: string, range: string) => {
   }
 }
 
-// Фильтрация результатов
 const filteredResults = computed(() => {
-  let results = checkStore.results
+  let resultsData = results.value
 
-  // Поиск по названию файла
+  // Поиск
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
-    results = results.filter((result) => result.fileName.toLowerCase().includes(query))
+    resultsData = resultsData.filter((result) => result.fileName.toLowerCase().includes(query))
   }
 
   // Фильтр по статусу
   if (filters.value.status !== 'all') {
-    results = results.filter((result) => result.status === filters.value.status)
+    resultsData = resultsData.filter((result) => result.status === filters.value.status)
   }
 
   // Фильтр по дате
   if (filters.value.dateRange !== 'all') {
-    results = results.filter((result) => isInDateRange(result.uploadDate, filters.value.dateRange))
+    resultsData = resultsData.filter((result) =>
+      isInDateRange(result.uploadDate, filters.value.dateRange),
+    )
   }
 
-  return results
+  return resultsData
 })
+
+// Пагинация
+const currentPage = ref(1)
+const itemsPerPage = 10
 
 const paginatedResults = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
@@ -94,7 +153,7 @@ const totalPages = computed(() => {
   return Math.ceil(filteredResults.value.length / itemsPerPage)
 })
 
-// Сброс пагинации при изменении поиска или фильтров
+// Обработчики событий
 const handleSearch = (query: string) => {
   searchQuery.value = query
   currentPage.value = 1
@@ -113,8 +172,7 @@ const handleFiltersReset = () => {
   currentPage.value = 1
 }
 
-// ... existing code for other functions ...
-
+// Навигация
 const viewResult = (resultId: string) => {
   router.push(`/result/${resultId}`)
 }
@@ -123,6 +181,7 @@ const goToHome = () => {
   router.push('/')
 }
 
+// Вспомогательные функции для отображения
 const getStatusIcon = (status: string) => {
   switch (status) {
     case 'compliant':
@@ -172,6 +231,26 @@ const getStatusText = (status: string) => {
       return 'Проверяется'
     default:
       return 'Неизвестно'
+  }
+}
+
+const getViolationColor = (count: number) => {
+  if (count === 0) {
+    return isDarkMode.value ? 'text-green-400' : 'text-green-600'
+  } else if (count <= 5) {
+    return isDarkMode.value ? 'text-yellow-400' : 'text-yellow-600'
+  } else {
+    return isDarkMode.value ? 'text-red-400' : 'text-red-600'
+  }
+}
+
+const getViolationText = (count: number) => {
+  if (count === 0) {
+    return 'Нет ошибок'
+  } else if (count <= 5) {
+    return 'Несколько ошибок'
+  } else {
+    return 'Много ошибок'
   }
 }
 
@@ -233,8 +312,32 @@ const formatDateMobile = (dateString: string) => {
       </div>
     </div>
 
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex justify-center items-center py-12">
+      <div class="flex items-center space-x-3">
+        <svg class="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
+        </svg>
+        <span :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+          Загрузка истории...
+        </span>
+      </div>
+    </div>
+
     <!-- Search and Filters -->
-    <div v-if="checkStore.results.length > 0" class="mb-6 sm:mb-8 space-y-4">
+    <div v-if="results.length > 0" class="mb-6 sm:mb-8 space-y-4">
       <!-- Search -->
       <div class="max-w-md mx-auto sm:mx-0">
         <SearchInput
@@ -253,7 +356,7 @@ const formatDateMobile = (dateString: string) => {
               leave-to-class="opacity-0 transform translate-y-1"
             >
               <div
-                v-if="searchQuery && filteredResults.length !== checkStore.results.length"
+                v-if="searchQuery && filteredResults.length !== results.length"
                 :class="[
                   'absolute top-full left-0 right-0 mt-2 px-3 py-2 text-xs rounded-lg z-10',
                   isDarkMode
@@ -262,8 +365,7 @@ const formatDateMobile = (dateString: string) => {
                 ]"
               >
                 <span v-if="filteredResults.length > 0">
-                  Найдено {{ filteredResults.length }} из
-                  {{ checkStore.results.length }} результатов
+                  Найдено {{ filteredResults.length }} из {{ results.length }} результатов
                 </span>
                 <span v-else class="text-red-500"> Ничего не найдено </span>
               </div>
@@ -282,7 +384,7 @@ const formatDateMobile = (dateString: string) => {
 
     <!-- Stats -->
     <div
-      v-if="checkStore.results.length > 0"
+      v-if="results.length > 0"
       class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8"
     >
       <div
@@ -317,72 +419,6 @@ const formatDateMobile = (dateString: string) => {
                   ? 'Найдено'
                   : 'Всего проверок'
               }}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div
-        :class="[
-          'p-4 sm:p-6 rounded-lg border',
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
-        ]"
-      >
-        <div class="flex items-center">
-          <div
-            :class="[
-              'w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center mr-3 sm:mr-4',
-              isDarkMode ? 'bg-green-600' : 'bg-green-100',
-            ]"
-          >
-            <CheckCircle
-              :class="['w-5 h-5 sm:w-6 sm:h-6', isDarkMode ? 'text-white' : 'text-green-600']"
-            />
-          </div>
-          <div>
-            <p
-              :class="[
-                'text-xl sm:text-2xl font-bold',
-                isDarkMode ? 'text-white' : 'text-gray-900',
-              ]"
-            >
-              {{ filteredResults.filter((r) => r.status === 'compliant').length }}
-            </p>
-            <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-              Соответствуют
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div
-        :class="[
-          'p-4 sm:p-6 rounded-lg border',
-          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
-        ]"
-      >
-        <div class="flex items-center">
-          <div
-            :class="[
-              'w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center mr-3 sm:mr-4',
-              isDarkMode ? 'bg-red-600' : 'bg-red-100',
-            ]"
-          >
-            <XCircle
-              :class="['w-5 h-5 sm:w-6 sm:h-6', isDarkMode ? 'text-white' : 'text-red-600']"
-            />
-          </div>
-          <div>
-            <p
-              :class="[
-                'text-xl sm:text-2xl font-bold',
-                isDarkMode ? 'text-white' : 'text-gray-900',
-              ]"
-            >
-              {{ filteredResults.filter((r) => r.status === 'non-compliant').length }}
-            </p>
-            <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-              Не соответствуют
             </p>
           </div>
         </div>
@@ -436,17 +472,11 @@ const formatDateMobile = (dateString: string) => {
 
           <div class="flex items-center space-x-4">
             <div class="text-right">
-              <div :class="['text-2xl font-bold', isDarkMode ? 'text-white' : 'text-gray-900']">
-                {{ result.complianceScore }}%
+              <div :class="['text-2xl font-bold', getViolationColor(result.totalViolations)]">
+                {{ result.totalViolations }}
               </div>
-              <div class="flex items-center">
-                <component
-                  :is="getStatusIcon(result.status)"
-                  :class="['w-4 h-4 mr-1', getStatusColor(result.status)]"
-                />
-                <span :class="['text-sm', getStatusColor(result.status)]">
-                  {{ getStatusText(result.status) }}
-                </span>
+              <div :class="['text-sm', getViolationColor(result.totalViolations)]">
+                {{ getViolationText(result.totalViolations) }}
               </div>
             </div>
             <svg
@@ -500,13 +530,13 @@ const formatDateMobile = (dateString: string) => {
                 </div>
               </div>
             </div>
-            <div
-              :class="[
-                'text-right flex-shrink-0 ml-2',
-                isDarkMode ? 'text-white' : 'text-gray-900',
-              ]"
-            >
-              <div class="text-lg font-bold">{{ result.complianceScore }}%</div>
+            <div class="text-right">
+              <div :class="['text-lg font-bold', getViolationColor(result.totalViolations)]">
+                {{ result.totalViolations }}
+              </div>
+              <div :class="['text-xs mt-1', getViolationColor(result.totalViolations)]">
+                {{ getViolationText(result.totalViolations) }}
+              </div>
             </div>
           </div>
 
@@ -515,21 +545,12 @@ const formatDateMobile = (dateString: string) => {
               <Calendar class="w-3 h-3 mr-1" />
               {{ formatDateMobile(result.uploadDate) }}
             </div>
-            <div class="flex items-center">
-              <component
-                :is="getStatusIcon(result.status)"
-                :class="['w-4 h-4 mr-1', getStatusColor(result.status)]"
-              />
-              <span :class="['text-xs', getStatusColor(result.status)]">
-                {{ getStatusText(result.status) }}
-              </span>
-            </div>
           </div>
         </div>
 
         <!-- Violations (both layouts) -->
         <div
-          v-if="result.violations.length > 0"
+          v-if="result.totalViolations > 0"
           :class="[
             'pt-3 sm:pt-4 border-t',
             isDarkMode ? 'border-gray-700 mt-3 sm:mt-4' : 'border-gray-200 mt-3 sm:mt-4',
@@ -537,7 +558,7 @@ const formatDateMobile = (dateString: string) => {
         >
           <div class="flex items-center text-xs sm:text-sm text-gray-500">
             <AlertCircle class="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-            {{ result.violations.length }} нарушений обнаружено
+            {{ result.totalViolations }} нарушений обнаружено
           </div>
         </div>
       </div>
@@ -567,6 +588,7 @@ const formatDateMobile = (dateString: string) => {
     <!-- No Search Results -->
     <div
       v-else-if="
+        !isLoading &&
         (searchQuery || filters.status !== 'all' || filters.dateRange !== 'all') &&
         filteredResults.length === 0
       "
@@ -617,7 +639,7 @@ const formatDateMobile = (dateString: string) => {
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="checkStore.results.length === 0" class="p-8 sm:p-12 text-center">
+    <div v-else-if="!isLoading && results.length === 0" class="p-8 sm:p-12 text-center">
       <div :class="['mb-4', isDarkMode ? 'text-gray-600' : 'text-gray-400']">
         <FileChartPie class="w-12 h-12 sm:w-16 sm:h-16 mx-auto" />
       </div>

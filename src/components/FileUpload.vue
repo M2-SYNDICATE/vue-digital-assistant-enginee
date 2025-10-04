@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
 import { CloudUpload, FileText, X, CheckCircle, Clock, AlertCircle } from 'lucide-vue-next'
+import { api, handleApiError } from '@/services/api'
 
 interface CheckResult {
   id: string
@@ -20,8 +21,9 @@ interface CheckResult {
 interface FileItem {
   file: File
   id: string
-  status: 'pending' | 'checking' | 'completed'
+  status: 'pending' | 'checking' | 'completed' | 'error'
   result?: CheckResult
+  error?: string
 }
 
 const emit = defineEmits<{
@@ -38,7 +40,7 @@ const acceptedFormats = ['.pdf', '.dwg', '.dxf', '.step', '.stp']
 // Вычисляемые свойства для прогресса
 const totalFiles = computed(() => uploadedFiles.value.length)
 const completedFiles = computed(
-  () => uploadedFiles.value.filter((f) => f.status === 'completed').length,
+  () => uploadedFiles.value.filter((f) => f.status === 'completed' || f.status === 'error').length,
 )
 const checkingFiles = computed(
   () => uploadedFiles.value.filter((f) => f.status === 'checking').length,
@@ -118,47 +120,36 @@ const startCheck = async () => {
   for (const fileItem of uploadedFiles.value) {
     fileItem.status = 'checking'
 
-    // Симуляция проверки (2-4 секунды на файл)
-    const checkTime = Math.random() * 2000 + 2000
-    await new Promise((resolve) => setTimeout(resolve, checkTime))
+    try {
+      // Загружаем файл через API
+      const uploadResponse = await api.uploadFile(fileItem.file)
 
-    // Генерируем результат
-    const resultId = `check_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      // Формируем результат проверки из ответа API
+      const result: CheckResult = {
+        id: uploadResponse.doc_id,
+        fileName: uploadResponse.filename,
+        fileType: uploadResponse.filename.split('.').pop()?.toUpperCase() || 'Unknown',
+        uploadDate: uploadResponse.upload_date,
+        status: uploadResponse.status === 'completed' ? 'compliant' : 'non-compliant',
+        violations: [], // API должен возвращать нарушения, если они есть
+        complianceScore: 100, // API должен возвращать оценку соответствия, если доступна
+      }
 
-    const result: CheckResult = {
-      id: resultId,
-      fileName: fileItem.file.name,
-      fileType: fileItem.file.name.split('.').pop()?.toUpperCase() || 'Unknown',
-      uploadDate: new Date().toISOString(),
-      status: Math.random() > 0.3 ? 'compliant' : 'non-compliant',
-      violations:
-        Math.random() > 0.4
-          ? []
-          : [
-              {
-                gostNumber: 'ГОСТ 2.305-2008',
-                section: 'п. 4.2.1',
-                description: 'Отсутствует основная надпись',
-                severity: 'critical',
-              },
-              {
-                gostNumber: 'ГОСТ 2.316-2008',
-                section: 'п. 3.1',
-                description: 'Неправильное обозначение шероховатости',
-                severity: 'warning',
-              },
-            ],
-      complianceScore: Math.floor(Math.random() * 40) + 60,
+      fileItem.result = result
+      fileItem.status = 'completed'
+      results.push(result)
+
+      console.log('FileUpload: Completed upload for:', fileItem.file.name, uploadResponse)
+    } catch (error) {
+      console.error('FileUpload: Error uploading file:', fileItem.file.name, error)
+      const errorMessage = handleApiError(error)
+
+      fileItem.status = 'error'
+      fileItem.error = errorMessage
     }
-
-    fileItem.result = result
-    fileItem.status = 'completed'
-    results.push(result)
-
-    console.log('FileUpload: Completed check for:', fileItem.file.name)
   }
 
-  console.log('FileUpload: All checks completed, results:', results)
+  console.log('FileUpload: All uploads completed, results:', results)
   isChecking.value = false
 
   // Эмитим все результаты
@@ -178,6 +169,8 @@ const getStatusIcon = (status: string) => {
       return Clock
     case 'completed':
       return CheckCircle
+    case 'error':
+      return AlertCircle
     default:
       return Clock
   }
@@ -191,6 +184,8 @@ const getStatusColor = (status: string) => {
       return isDarkMode.value ? 'text-blue-400' : 'text-blue-600'
     case 'completed':
       return isDarkMode.value ? 'text-green-400' : 'text-green-600'
+    case 'error':
+      return isDarkMode.value ? 'text-red-400' : 'text-red-600'
     default:
       return isDarkMode.value ? 'text-gray-400' : 'text-gray-500'
   }
@@ -201,9 +196,11 @@ const getStatusText = (fileItem: FileItem) => {
     case 'pending':
       return 'Ожидает'
     case 'checking':
-      return 'Проверяется...'
+      return 'Загружается...'
     case 'completed':
-      return fileItem.result?.status === 'compliant' ? 'Соответствует' : 'Не соответствует'
+      return fileItem.result?.status === 'compliant' ? 'Загружен' : 'Загружен'
+    case 'error':
+      return `Ошибка: ${fileItem.error || 'Неизвестная ошибка'}`
     default:
       return 'Ожидает'
   }
@@ -244,7 +241,7 @@ const getStatusText = (fileItem: FileItem) => {
               Загрузка документов
             </h2>
             <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-              PDF, DWG, DXF, STEP
+              PDF
             </p>
           </div>
         </div>
@@ -333,7 +330,7 @@ const getStatusText = (fileItem: FileItem) => {
         <div v-if="isChecking" class="space-y-2">
           <div class="flex justify-between text-sm">
             <span :class="[isDarkMode ? 'text-gray-300' : 'text-gray-700']">
-              Обработка файлов...
+              Загрузка файлов...
             </span>
             <span :class="[isDarkMode ? 'text-gray-400' : 'text-gray-600']">
               {{ progressPercentage }}%
@@ -361,6 +358,7 @@ const getStatusText = (fileItem: FileItem) => {
               'flex items-center justify-between p-3 rounded-lg border transition-all',
               isDarkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50 border-gray-200',
               fileItem.status === 'checking' ? 'ring-2 ring-blue-500/20' : '',
+              fileItem.status === 'error' ? 'ring-2 ring-red-500/20' : '',
             ]"
           >
             <div class="flex items-center space-x-3 min-w-0 flex-1">
@@ -372,20 +370,20 @@ const getStatusText = (fileItem: FileItem) => {
                       ? 'bg-blue-600'
                       : 'bg-blue-100'
                     : fileItem.status === 'completed'
-                      ? fileItem.result?.status === 'compliant'
+                      ? isDarkMode
+                        ? 'bg-green-600'
+                        : 'bg-green-100'
+                      : fileItem.status === 'error'
                         ? isDarkMode
-                          ? 'bg-green-600'
-                          : 'bg-green-100'
-                        : isDarkMode
                           ? 'bg-red-600'
                           : 'bg-red-100'
-                      : isDarkMode
-                        ? 'bg-gray-600'
-                        : 'bg-gray-200',
+                        : isDarkMode
+                          ? 'bg-gray-600'
+                          : 'bg-gray-200',
                 ]"
               >
                 <component
-                  :is="fileItem.status === 'checking' ? Clock : getFileIcon(fileItem.file.name)"
+                  :is="getStatusIcon(fileItem.status)"
                   :class="[
                     'w-4 h-4',
                     fileItem.status === 'checking'
@@ -393,16 +391,16 @@ const getStatusText = (fileItem: FileItem) => {
                         ? 'text-white animate-spin'
                         : 'text-blue-600 animate-spin'
                       : fileItem.status === 'completed'
-                        ? fileItem.result?.status === 'compliant'
+                        ? isDarkMode
+                          ? 'text-white'
+                          : 'text-green-600'
+                        : fileItem.status === 'error'
                           ? isDarkMode
                             ? 'text-white'
-                            : 'text-green-600'
-                          : isDarkMode
-                            ? 'text-white'
                             : 'text-red-600'
-                        : isDarkMode
-                          ? 'text-gray-400'
-                          : 'text-gray-600',
+                          : isDarkMode
+                            ? 'text-gray-400'
+                            : 'text-gray-600',
                   ]"
                 />
               </div>
@@ -423,7 +421,7 @@ const getStatusText = (fileItem: FileItem) => {
                     {{ getStatusText(fileItem) }}
                   </span>
                   <span
-                    v-if="fileItem.result"
+                    v-if="fileItem.result && fileItem.result.complianceScore"
                     :class="['text-xs font-medium', isDarkMode ? 'text-gray-300' : 'text-gray-700']"
                   >
                     {{ fileItem.result.complianceScore }}%
@@ -454,7 +452,7 @@ const getStatusText = (fileItem: FileItem) => {
             :disabled="uploadedFiles.length === 0"
             class="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base min-h-[44px]"
           >
-            Запустить анализ ({{ uploadedFiles.length }})
+            Загрузить файлы ({{ uploadedFiles.length }})
           </button>
 
           <div
@@ -480,11 +478,9 @@ const getStatusText = (fileItem: FileItem) => {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               ></path>
             </svg>
-            <span
-              >Анализ файлов... ({{
-                checkingFiles.length > 0 ? checkingFiles.length : completedFiles
-              }}/{{ totalFiles }})</span
-            >
+            Загрузка файлов... ({{ checkingFiles > 0 ? checkingFiles : completedFiles }}/{{
+              totalFiles
+            }})
           </div>
 
           <!-- Дополнительные кнопки -->
@@ -525,7 +521,7 @@ const getStatusText = (fileItem: FileItem) => {
           >
             <X class="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             <span class="hidden sm:inline">Очистить</span>
-            <span class="sm:hidden">Очистить</span>
+            <span class="sm:hidden"></span>
           </button>
         </div>
       </div>

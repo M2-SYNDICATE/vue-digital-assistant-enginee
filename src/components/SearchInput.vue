@@ -35,10 +35,14 @@ watch(
   },
 )
 
-watch(localValue, (newValue) => {
-  emit('update:modelValue', newValue)
-  emit('search', newValue)
-})
+watch(
+  localValue,
+  (newValue) => {
+    emit('update:modelValue', newValue)
+    emit('search', newValue)
+  },
+  { immediate: true },
+)
 
 const handleFocus = () => {
   isFocused.value = true
@@ -56,6 +60,23 @@ const clearSearch = () => {
 
 const focusInput = () => {
   inputRef.value?.focus()
+}
+
+// Добавим debounced search для лучшего UX
+const debouncedSearch = ref()
+const handleInput = (e: Event) => {
+  const value = (e.target as HTMLInputElement).value
+  localValue.value = value
+
+  // Очищаем предыдущий таймер
+  if (debouncedSearch.value) {
+    clearTimeout(debouncedSearch.value)
+  }
+
+  // Устанавливаем новый таймер для поиска
+  debouncedSearch.value = setTimeout(() => {
+    emit('search', value)
+  }, 300) // 300ms задержка
 }
 </script>
 
@@ -103,7 +124,8 @@ const focusInput = () => {
       <!-- Input Field -->
       <input
         ref="inputRef"
-        v-model="localValue"
+        :value="localValue"
+        @input="handleInput"
         :placeholder="placeholder"
         :disabled="disabled"
         @focus="handleFocus"

@@ -1,3 +1,4 @@
+<!-- В вашем App.vue добавьте логирование -->
 <script setup lang="ts">
 import { ref, provide, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
@@ -30,11 +31,16 @@ onMounted(() => {
   isDarkMode.value = savedTheme === 'dark'
   updateTheme()
 
+  console.log('Before initAuth - isAuthenticated:', authStore.isAuthenticated)
+  console.log('Before initAuth - user:', authStore.user)
+
   // Initialize auth state
   authStore.initAuth()
+
+  console.log('After initAuth - isAuthenticated:', authStore.isAuthenticated)
+  console.log('After initAuth - user:', authStore.user)
 })
 </script>
-
 <template>
   <div
     :class="[
@@ -75,11 +81,7 @@ onMounted(() => {
             'inline-flex items-center space-x-2 text-xs font-mono',
             isDarkMode ? 'text-gray-500' : 'text-gray-400',
           ]"
-        >
-          <div class="w-2 h-2 bg-current rounded-full"></div>
-          <span>TECHNICAL DOCUMENTATION ANALYSIS SYSTEM</span>
-          <div class="w-2 h-2 bg-current rounded-full"></div>
-        </div>
+        ></div>
 
         <div class="mt-2">
           <a

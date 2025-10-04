@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { inject, ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import CheckResults from '../components/CheckResults.vue'
-import { getCheckResult, type CheckResult } from '../stores/checkStore'
-import { History } from 'lucide-vue-next'
+import { api, handleApiError, type DetailedResult } from '@/services/api'
+import { History, Download, FileDown, FileText, AlertTriangle, CheckCircle } from 'lucide-vue-next'
 
 const props = defineProps<{
   id: string
@@ -13,7 +12,7 @@ const isDarkMode = inject('isDarkMode', ref(false))
 const route = useRoute()
 const router = useRouter()
 
-const result = ref<CheckResult | null>(null)
+const result = ref<DetailedResult | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
 
@@ -21,26 +20,13 @@ const resultId = computed(() => props.id || (route.params.id as string))
 
 onMounted(async () => {
   try {
-    // Имитация загрузки
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    console.log('Looking for result with ID:', resultId.value) // Отладка
-
-    const foundResult = getCheckResult(resultId.value)
-    console.log('Found result:', foundResult) // Отладка
-
-    if (foundResult) {
-      result.value = foundResult
-    } else {
-      error.value = `Результат с ID "${resultId.value}" не найден`
-      console.error('Result not found for ID:', resultId.value) // Отладка
-      // Не перенаправляем сразу, показываем ошибку
-      // router.push('/404')
-      // return
-    }
+    console.log('Loading result with ID:', resultId.value)
+    const detailedResult = await api.getResult(resultId.value)
+    result.value = detailedResult
   } catch (err) {
     console.error('Error loading result:', err)
-    error.value = 'Ошибка при загрузке результата'
+    const errorMessage = handleApiError(err)
+    error.value = `Ошибка при загрузке результата: ${errorMessage}`
   } finally {
     isLoading.value = false
   }
@@ -57,10 +43,90 @@ const goToHistory = () => {
 const goToHome = () => {
   router.push('/')
 }
+
+// Функция для получения цвета иконки нарушения
+const getSeverityColor = (count: number) => {
+  if (isDarkMode.value) {
+    if (count <= 3) return 'text-yellow-400'
+    if (count <= 10) return 'text-orange-400'
+    return 'text-red-400'
+  } else {
+    if (count <= 3) return 'text-yellow-600'
+    if (count <= 10) return 'text-orange-600'
+    return 'text-red-600'
+  }
+}
+
+// Функция для скачивания файла с аннотациями
+const downloadAnnotatedFile = async () => {
+  try {
+    const blob = await api.downloadAnnotatedFile(resultId.value)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `annotated_${result.value?.filename || `document_${resultId.value}`}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Error downloading annotated file:', error)
+    const errorMessage = handleApiError(error)
+    alert(`Ошибка скачивания аннотированного файла: ${errorMessage}`)
+  }
+}
+// Функция для скачивания исходного файла
+const downloadOriginalFile = async () => {
+  try {
+    const blob = await api.downloadFile(resultId.value)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = result.value?.filename || `document_${resultId.value}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Error downloading original file:', error)
+    const errorMessage = handleApiError(error)
+    alert(`Ошибка скачивания файла: ${errorMessage}`)
+  }
+}
+
+// Функция для форматирования даты
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('ru-RU', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// Функция для получения описания ошибки из отчета
+const getErrorDescription = (errorPoint: string) => {
+  if (!result.value?.full_report) return ''
+
+  const lines = result.value.full_report.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line && line.includes(errorPoint)) {
+      for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+        const currentLine = lines[j]
+        if (currentLine?.trim().startsWith('-')) {
+          return currentLine.trim().substring(2)
+        }
+      }
+    }
+  }
+  return `Нарушение в пункте ${errorPoint}`
+}
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto">
+  <div class="max-w-6xl mx-auto">
     <!-- Navigation -->
     <div class="mb-8">
       <div class="flex items-center justify-between">
@@ -79,7 +145,7 @@ const goToHome = () => {
               d="M15 19l-7-7 7-7"
             />
           </svg>
-          Главная
+          Назад
         </button>
 
         <button
@@ -112,8 +178,156 @@ const goToHome = () => {
     </div>
 
     <!-- Results -->
-    <div v-if="result && !isLoading && !error" class="max-w-3xl mx-auto">
-      <CheckResults :result="result" />
+    <div v-if="result && !isLoading && !error" class="space-y-8">
+      <!-- Document Info -->
+      <div
+        :class="[
+          'p-6 rounded-lg border',
+          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+        ]"
+      >
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <h3 :class="['font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-700']">Файл</h3>
+            <p :class="['mt-1', isDarkMode ? 'text-white' : 'text-gray-900']">
+              {{ result.filename }}
+            </p>
+          </div>
+          <div>
+            <h3 :class="['font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-700']">
+              Дата загрузки
+            </h3>
+            <p :class="['mt-1', isDarkMode ? 'text-white' : 'text-gray-900']">
+              {{ formatDate(result.upload_date) }}
+            </p>
+          </div>
+          <div>
+            <h3 :class="['font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-700']">
+              Нарушений
+            </h3>
+            <p
+              :class="[
+                'mt-1 text-lg font-bold',
+                result.total_violations > 0
+                  ? isDarkMode
+                    ? 'text-red-400'
+                    : 'text-red-600'
+                  : isDarkMode
+                    ? 'text-green-400'
+                    : 'text-green-600',
+              ]"
+            >
+              {{ result.total_violations }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Download Buttons -->
+      <div class="flex flex-wrap gap-4">
+        <button
+          @click="downloadAnnotatedFile"
+          :class="[
+            'inline-flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors min-h-[44px]',
+            isDarkMode
+              ? 'bg-green-600 text-white hover:bg-green-700'
+              : 'bg-green-600 text-white hover:bg-green-700',
+          ]"
+        >
+          <FileDown class="w-4 h-4 mr-2" />
+          Скачать файл с ошибками
+        </button>
+        <button
+          @click="downloadOriginalFile"
+          :class="[
+            'inline-flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors min-h-[44px]',
+            isDarkMode
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-blue-600 text-white hover:bg-blue-700',
+          ]"
+        >
+          <Download class="w-4 h-4 mr-2" />
+          Скачать исходный файл
+        </button>
+      </div>
+
+      <!-- Error Points -->
+      <div
+        :class="[
+          'p-6 rounded-lg border',
+          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+        ]"
+      >
+        <h2 :class="['text-xl font-bold mb-4', isDarkMode ? 'text-white' : 'text-gray-900']">
+          Детали нарушений
+        </h2>
+        <div v-if="result.error_points.length === 0" class="text-center py-8">
+          <CheckCircle
+            :class="['w-12 h-12 mx-auto mb-4', isDarkMode ? 'text-green-400' : 'text-green-600']"
+          />
+          <p :class="['text-lg', isDarkMode ? 'text-gray-300' : 'text-gray-600']">
+            Нарушений не обнаружено
+          </p>
+          <p :class="['text-sm mt-2', isDarkMode ? 'text-gray-500' : 'text-gray-500']">
+            Документ соответствует всем требованиям
+          </p>
+        </div>
+        <div v-else class="space-y-4">
+          <div
+            v-for="(errorPoint, index) in result.error_points"
+            :key="index"
+            :class="['p-4 rounded-lg border', isDarkMode ? 'border-gray-700' : 'border-gray-200']"
+          >
+            <div class="flex items-start">
+              <AlertTriangle
+                :class="[
+                  'w-5 h-5 mr-3 mt-0.5 flex-shrink-0',
+                  getSeverityColor(result.error_counts[errorPoint] || 0),
+                ]"
+              />
+              <div class="flex-1">
+                <div class="flex items-center justify-between">
+                  <h3 :class="['font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
+                    Пункт {{ errorPoint }}
+                  </h3>
+                  <span
+                    :class="[
+                      'px-2 py-1 rounded-full text-xs font-medium',
+                      getSeverityColor(result.error_counts[errorPoint] || 0),
+                      isDarkMode ? 'bg-gray-700' : 'bg-gray-100',
+                    ]"
+                  >
+                    {{ result.error_counts[errorPoint] || 0 }} шт.
+                  </span>
+                </div>
+                <p :class="['mt-2', isDarkMode ? 'text-gray-300' : 'text-gray-600']">
+                  {{ getErrorDescription(errorPoint) }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full Report -->
+      <div
+        v-if="result.full_report"
+        :class="[
+          'p-6 rounded-lg border',
+          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+        ]"
+      >
+        <h2 :class="['text-xl font-bold mb-4', isDarkMode ? 'text-white' : 'text-gray-900']">
+          Полный отчет
+        </h2>
+        <pre
+          :class="[
+            'whitespace-pre-wrap break-words p-4 rounded-lg font-mono text-sm',
+            isDarkMode ? 'bg-gray-700/50 text-gray-300' : 'bg-gray-50 text-gray-700',
+          ]"
+          >{{ result.full_report }}</pre
+        >
+      </div>
     </div>
 
     <!-- Error State -->
@@ -135,7 +349,7 @@ const goToHome = () => {
           />
         </svg>
         <h3 :class="['text-lg font-medium mb-2', isDarkMode ? 'text-red-300' : 'text-red-800']">
-          Результат не найден
+          Ошибка загрузки
         </h3>
         <p class="mb-6">{{ error }}</p>
         <div class="space-x-4">
@@ -170,38 +384,27 @@ const goToHome = () => {
     </div>
 
     <!-- Loading State -->
-    <div
-      v-else-if="isLoading"
-      :class="['text-center py-12', isDarkMode ? 'text-gray-400' : 'text-gray-600']"
-    >
-      <svg class="w-8 h-8 animate-spin mx-auto mb-4" fill="none" viewBox="0 0 24 24">
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        ></circle>
-        <path
-          class="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-        ></path>
-      </svg>
-      <p>Загрузка результатов...</p>
-    </div>
-
-    <!-- Debug Info (только в development) -->
-    <div v-if="!isLoading" class="mt-8 text-center">
-      <details :class="['text-xs', isDarkMode ? 'text-gray-500' : 'text-gray-400']">
-        <summary class="cursor-pointer">Debug Info</summary>
-        <div class="mt-2 font-mono">
-          <p>Result ID: {{ resultId }}</p>
-          <p>Has Result: {{ !!result }}</p>
-          <p>Error: {{ error }}</p>
-        </div>
-      </details>
+    <div v-else-if="isLoading" class="flex justify-center items-center py-12">
+      <div class="flex items-center space-x-3">
+        <svg class="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
+        </svg>
+        <span :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+          Загрузка результата...
+        </span>
+      </div>
     </div>
   </div>
 </template>

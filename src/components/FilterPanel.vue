@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, inject, computed } from 'vue'
-import { Filter, Calendar, CheckCircle, XCircle, AlertCircle, RotateCcw } from 'lucide-vue-next'
+import { Filter, Calendar, RotateCcw } from 'lucide-vue-next'
 
 interface FilterState {
   status: string
@@ -23,13 +23,6 @@ const isDarkMode = inject('isDarkMode', ref(false))
 const isExpanded = ref(false)
 
 const localFilters = ref<FilterState>({ ...props.modelValue })
-
-const statusOptions = [
-  { value: 'all', label: 'Все статусы', icon: Filter },
-  { value: 'compliant', label: 'Соответствует', icon: CheckCircle },
-  { value: 'non-compliant', label: 'Не соответствует', icon: XCircle },
-  { value: 'checking', label: 'Проверяется', icon: AlertCircle },
-]
 
 const dateRangeOptions = [
   { value: 'all', label: 'Все время' },
@@ -62,16 +55,6 @@ const resetFilters = () => {
 
 const toggleExpanded = () => {
   isExpanded.value = !isExpanded.value
-}
-
-const getStatusIcon = (status: string) => {
-  const option = statusOptions.find((opt) => opt.value === status)
-  return option?.icon || Filter
-}
-
-const getStatusLabel = (status: string) => {
-  const option = statusOptions.find((opt) => opt.value === status)
-  return option?.label || 'Все статусы'
 }
 
 const getDateRangeLabel = (range: string) => {
@@ -151,42 +134,7 @@ const getDateRangeLabel = (range: string) => {
             isDarkMode ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200',
           ]"
         >
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-            <!-- Status Filter -->
-            <div class="space-y-2">
-              <label
-                :class="[
-                  'block text-sm font-medium',
-                  isDarkMode ? 'text-gray-200' : 'text-gray-700',
-                ]"
-              >
-                Статус проверки
-              </label>
-              <div class="relative">
-                <select
-                  v-model="localFilters.status"
-                  @change="updateFilters"
-                  :class="[
-                    'w-full px-4 py-2.5 pr-10 rounded-lg border transition-colors',
-                    'text-sm font-medium appearance-none cursor-pointer min-h-[44px]',
-                    isDarkMode
-                      ? 'bg-gray-700 border-gray-600 text-gray-200 focus:border-blue-500'
-                      : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500',
-                  ]"
-                >
-                  <option v-for="option in statusOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-                <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <component
-                    :is="getStatusIcon(localFilters.status)"
-                    :class="['w-4 h-4', isDarkMode ? 'text-gray-400' : 'text-gray-500']"
-                  />
-                </div>
-              </div>
-            </div>
-
+          <div class="grid grid-cols-1 sm:grid-cols-1 gap-4 sm:gap-6">
             <!-- Date Range Filter -->
             <div class="space-y-2">
               <label
@@ -234,15 +182,6 @@ const getDateRangeLabel = (range: string) => {
                 :class="['text-xs font-medium', isDarkMode ? 'text-gray-400' : 'text-gray-600']"
               >
                 Активные фильтры:
-              </span>
-              <span
-                v-if="localFilters.status !== 'all'"
-                :class="[
-                  'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
-                  isDarkMode ? 'bg-blue-600/20 text-blue-400' : 'bg-blue-100 text-blue-800',
-                ]"
-              >
-                {{ getStatusLabel(localFilters.status) }}
               </span>
               <span
                 v-if="localFilters.dateRange !== 'all'"

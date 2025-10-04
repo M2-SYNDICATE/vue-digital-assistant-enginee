@@ -87,7 +87,7 @@ const isActiveRoute = (path: string) => {
               TechCheck
             </h1>
             <p :class="['text-xs font-mono', isDarkMode ? 'text-gray-400' : 'text-gray-500']">
-              v2.0.1
+              v1.0
             </p>
           </div>
         </div>

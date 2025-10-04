@@ -1,47 +1,64 @@
 <script setup lang="ts">
 import { inject, ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-vue-next'
+import { Eye, EyeOff, User, Lock, ArrowRight, Sun, Moon } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import { api, handleApiError } from '@/services/api'
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 const authStore = useAuthStore()
 
-// Состояние формы
+// Form state with login and password fields
 const form = reactive({
-  email: '',
+  login: '',
   password: '',
 })
 
-// Состояние UI
+// UI state
 const isLoading = ref(false)
 const showPassword = ref(false)
 const errors = reactive({
-  email: '',
+  login: '',
   password: '',
+  general: '',
 })
 
-// Валидация email
-const validateEmail = (email: string) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
+// Theme toggle
+const toggleTheme = () => {
+  isDarkMode.value = !isDarkMode.value
+  localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
+  updateTheme()
 }
 
-// Обработка отправки формы
-const handleSubmit = async () => {
-  // Сброс ошибок
-  errors.email = ''
-  errors.password = ''
+const updateTheme = () => {
+  if (isDarkMode.value) {
+    document.documentElement.classList.add('dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+  }
+}
 
-  // Валидация
+// Login validation
+const validateLogin = (login: string) => {
+  return login.trim().length >= 3
+}
+
+// Handle form submission with POST request to /login
+const handleSubmit = async () => {
+  // Clear previous errors
+  errors.login = ''
+  errors.password = ''
+  errors.general = ''
+
+  // Client-side validation
   let hasErrors = false
 
-  if (!form.email) {
-    errors.email = 'Введите email'
+  if (!form.login.trim()) {
+    errors.login = 'Введите логин'
     hasErrors = true
-  } else if (!validateEmail(form.email)) {
-    errors.email = 'Введите корректный email'
+  } else if (!validateLogin(form.login)) {
+    errors.login = 'Логин должен содержать минимум 3 символа'
     hasErrors = true
   }
 
@@ -55,47 +72,91 @@ const handleSubmit = async () => {
 
   if (hasErrors) return
 
-  // Имитация загрузки
   isLoading.value = true
 
   try {
-    // Имитация авторизации
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // Send POST request to /login with JSON body { "login": "string", "password": "string" }
+    const response = await api.login(form.login.trim(), form.password)
 
-    // Создаем пользователя (в реальном приложении данные придут с сервера)
-    const userData = {
-      id: '1',
-      name: 'Пользователь',
-      email: form.email,
-    }
+    // JWT token is automatically stored by the API service
+    // Store user data in auth store
+    authStore.login(response.user)
 
-    // Авторизуем пользователя
-    authStore.login(userData)
-
-    // Успешный вход - router guard автоматически перенаправит на главную
+    // Redirect to main application
     router.push('/')
   } catch (error) {
-    console.error('Ошибка входа:', error)
-    errors.email = 'Ошибка авторизации. Попробуйте еще раз.'
+    console.error('Login error:', error)
+
+    // Handle different types of API errors
+    const errorMessage = handleApiError(error)
+
+    if (errorMessage.includes('401') || errorMessage.includes('Authentication failed')) {
+      errors.general = 'Неверный логин или пароль'
+    } else if (errorMessage.includes('Network error')) {
+      errors.general = 'Ошибка сети. Проверьте подключение к интернету'
+    } else if (errorMessage.includes('400')) {
+      errors.general = 'Некорректные данные для входа'
+    } else if (errorMessage.includes('500')) {
+      errors.general = 'Ошибка сервера. Попробуйте позже'
+    } else {
+      errors.general = errorMessage || 'Ошибка авторизации. Попробуйте еще раз'
+    }
   } finally {
     isLoading.value = false
   }
 }
 
-// Переключение видимости пароля
+// Toggle password visibility
 const togglePasswordVisibility = () => {
   showPassword.value = !showPassword.value
 }
 
-// Очистка ошибки при вводе
+// Clear specific error when user starts typing
 const clearError = (field: keyof typeof errors) => {
   errors[field] = ''
+}
+
+// Clear general error when user modifies any field
+const clearGeneralError = () => {
+  if (errors.general) {
+    errors.general = ''
+  }
+}
+
+// Обработчик ввода для поля логина
+const handleLoginInput = () => {
+  clearError('login')
+  clearGeneralError()
+}
+
+// Обработчик ввода для поля пароля
+const handlePasswordInput = () => {
+  clearError('password')
+  clearGeneralError()
 }
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center px-4 py-8">
-    <!-- Фоновая сетка -->
+  <div class="min-h-screen flex items-center justify-center px-4 py-8 relative">
+    <!-- Theme toggle button -->
+    <div class="absolute top-4 right-4 sm:top-6 sm:right-6 z-20">
+      <button
+        @click="toggleTheme"
+        :class="[
+          'p-2 sm:p-3 rounded-xl transition-all duration-200 backdrop-blur-sm border',
+          'hover:scale-110 active:scale-95',
+          isDarkMode
+            ? 'bg-gray-800/80 border-gray-700 text-yellow-400 hover:text-yellow-300 hover:bg-gray-700/80'
+            : 'bg-white/80 border-gray-200 text-orange-500 hover:text-orange-600 hover:bg-gray-50/80',
+        ]"
+        title="Переключить тему"
+      >
+        <Sun v-if="isDarkMode" class="w-5 h-5 sm:w-6 sm:h-6" />
+        <Moon v-else class="w-5 h-5 sm:w-6 sm:h-6" />
+      </button>
+    </div>
+
+    <!-- Background grid pattern -->
     <div
       :class="[
         'absolute inset-0 opacity-5 pointer-events-none',
@@ -104,9 +165,9 @@ const clearError = (field: keyof typeof errors) => {
       ]"
     ></div>
 
-    <!-- Контейнер формы -->
+    <!-- Login form container -->
     <div class="w-full max-w-md relative z-10">
-      <!-- Заголовок -->
+      <!-- Header -->
       <div class="text-center mb-8">
         <div
           class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-600 mb-6 shadow-lg"
@@ -133,7 +194,7 @@ const clearError = (field: keyof typeof errors) => {
         </p>
       </div>
 
-      <!-- Форма входа -->
+      <!-- Login form -->
       <div
         :class="[
           'p-6 sm:p-8 rounded-2xl border backdrop-blur-sm',
@@ -143,33 +204,67 @@ const clearError = (field: keyof typeof errors) => {
         ]"
       >
         <form @submit.prevent="handleSubmit" class="space-y-6">
-          <!-- Поле Email -->
+          <!-- General error message -->
+          <Transition
+            enter-active-class="transition-all duration-200 ease-out"
+            enter-from-class="opacity-0 transform -translate-y-1"
+            enter-to-class="opacity-100 transform translate-y-0"
+            leave-active-class="transition-all duration-150 ease-in"
+            leave-from-class="opacity-100 transform translate-y-0"
+            leave-to-class="opacity-0 transform -translate-y-1"
+          >
+            <div
+              v-if="errors.general"
+              :class="[
+                'p-3 rounded-lg border flex items-center space-x-2',
+                'bg-red-50 border-red-200 text-red-700',
+                isDarkMode && 'bg-red-900/20 border-red-800 text-red-400',
+              ]"
+            >
+              <svg
+                class="w-4 h-4 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span class="text-sm">{{ errors.general }}</span>
+            </div>
+          </Transition>
+
+          <!-- Login field -->
           <div class="space-y-2">
             <label
-              for="email"
+              for="login"
               :class="['block text-sm font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
             >
-              Email адрес
+              Логин
             </label>
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail
+                <User
                   :class="[
                     'w-5 h-5 transition-colors duration-200',
-                    errors.email ? 'text-red-500' : isDarkMode ? 'text-gray-400' : 'text-gray-400',
+                    errors.login ? 'text-red-500' : isDarkMode ? 'text-gray-400' : 'text-gray-400',
                   ]"
                 />
               </div>
               <input
-                id="email"
-                v-model="form.email"
-                @input="clearError('email')"
-                type="email"
-                autocomplete="email"
-                placeholder="your@email.com"
+                id="login"
+                v-model="form.login"
+                @input="handleLoginInput"
+                type="text"
+                autocomplete="username"
+                placeholder="Введите логин"
                 :class="[
                   'block w-full pl-10 pr-3 py-3 border rounded-xl text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2',
-                  errors.email
+                  errors.login
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                     : isDarkMode
                       ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800'
@@ -185,7 +280,7 @@ const clearError = (field: keyof typeof errors) => {
               leave-from-class="opacity-100 transform translate-y-0"
               leave-to-class="opacity-0 transform -translate-y-1"
             >
-              <p v-if="errors.email" class="text-sm text-red-500 flex items-center space-x-1">
+              <p v-if="errors.login" class="text-sm text-red-500 flex items-center space-x-1">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     stroke-linecap="round"
@@ -194,12 +289,12 @@ const clearError = (field: keyof typeof errors) => {
                     d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                   />
                 </svg>
-                <span>{{ errors.email }}</span>
+                <span>{{ errors.login }}</span>
               </p>
             </Transition>
           </div>
 
-          <!-- Поле Пароль -->
+          <!-- Password field -->
           <div class="space-y-2">
             <label
               for="password"
@@ -223,7 +318,7 @@ const clearError = (field: keyof typeof errors) => {
               <input
                 id="password"
                 v-model="form.password"
-                @input="clearError('password')"
+                @input="handlePasswordInput"
                 :type="showPassword ? 'text' : 'password'"
                 autocomplete="current-password"
                 placeholder="Введите пароль"
@@ -240,6 +335,7 @@ const clearError = (field: keyof typeof errors) => {
                 type="button"
                 @click="togglePasswordVisibility"
                 class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                tabindex="-1"
               >
                 <EyeOff
                   v-if="showPassword"
@@ -283,7 +379,7 @@ const clearError = (field: keyof typeof errors) => {
             </Transition>
           </div>
 
-          <!-- Кнопка входа -->
+          <!-- Submit button -->
           <button
             type="submit"
             :disabled="isLoading"
@@ -321,18 +417,14 @@ const clearError = (field: keyof typeof errors) => {
         </form>
       </div>
 
-      <!-- Техническая информация -->
+      <!-- Technical footer -->
       <div class="mt-8 text-center">
         <div
           :class="[
             'inline-flex items-center space-x-2 text-xs font-mono',
             isDarkMode ? 'text-gray-500' : 'text-gray-400',
           ]"
-        >
-          <div class="w-2 h-2 bg-current rounded-full"></div>
-          <span>SECURE LOGIN SYSTEM v2.0</span>
-          <div class="w-2 h-2 bg-current rounded-full"></div>
-        </div>
+        ></div>
       </div>
     </div>
   </div>

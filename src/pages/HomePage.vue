@@ -2,7 +2,6 @@
 import { inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import FileUpload from '../components/FileUpload.vue'
-import { addCheckResult, type CheckResult } from '../stores/checkStore'
 import { Check } from 'lucide-vue-next'
 import { File } from 'lucide-vue-next'
 import { ChartColumnIncreasing } from 'lucide-vue-next'
@@ -10,15 +9,24 @@ import { ChartColumnIncreasing } from 'lucide-vue-next'
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 
+// Тип для результатов проверки
+interface CheckResult {
+  id: string
+  fileName: string
+  fileType: string
+  uploadDate: string
+  status: 'checking' | 'compliant' | 'non-compliant'
+  violations: Array<{
+    gostNumber: string
+    section: string
+    description: string
+    severity: 'critical' | 'warning' | 'info'
+  }>
+  complianceScore: number
+}
+
 const handleFilesChecked = (results: CheckResult[]) => {
   console.log('HomePage: Received results:', results) // Отладка
-
-  // Добавляем все результаты в store
-  results.forEach((result) => {
-    addCheckResult(result)
-  })
-
-  console.log('HomePage: All results added to store, navigating to history') // Отладка
 
   // Перенаправляем на страницу истории
   router.push('/history')
@@ -126,7 +134,7 @@ const handleFilesChecked = (results: CheckResult[]) => {
               isDarkMode ? 'text-gray-400' : 'text-gray-600',
             ]"
           >
-            PDF, DWG, DXF, STEP файлы
+            PDF файлов
           </p>
         </div>
 
@@ -166,7 +174,7 @@ const handleFilesChecked = (results: CheckResult[]) => {
               isDarkMode ? 'text-gray-400' : 'text-gray-600',
             ]"
           >
-            Подробный анализ нарушений и рекомендации
+            Подробный анализ нарушений
           </p>
         </div>
       </div>
