@@ -1,43 +1,88 @@
-# vue-digital-assistant-enginee
+*Frontend часть системы для автоматической проверки технических PDF-документов. Разработана для хакатона AtomicHack 3 в НГТУ.*
 
-This template should help get you started developing with Vue 3 in Vite.
+[![Vue.js](https://img.shields.io/badge/Vue.js-3-green?logo=vuedotjs)](https://vuejs.org/)
 
-## Recommended IDE Setup
+## **Описание**
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+Frontend, построенный на **Vue.js 3**, предоставляет пользовательский интерфейс для загрузки PDF-документов, просмотра истории проверок, анализа результатов и скачивания файлов. Интерфейс адаптивен, поддерживает темный/светлый режим и обеспечивает удобное взаимодействие с backend API.
 
-## Recommended Browser Setup
+### **Основные функции**
+- 📤 **Загрузка файлов**: Компонент `FileUpload.vue` для отправки PDF на анализ.
+- 📜 **История проверок**: Страница `HistoryPage.vue` с фильтрами и поиском.
+- 📊 **Результаты анализа**: Страница `ResultPage.vue` с детальными отчетами и аннотациями.
+- 🔒 **Аутентификация**: Страница `LoginPage.vue` для входа/регистрации.
+- 🎨 **UI/UX**: Адаптивный дизайн с Tailwind CSS, иконки Lucide, переключение тем.
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## **Технологии**
+- **Framework**: Vue.js 3 (Composition API).
+- **Роутинг**: Vue Router.
+- **Состояние**: Pinia (хранилище аутентификации).
+- **Стили**: Tailwind CSS.
+- **Иконки**: Lucide-Vue-Next.
+- **API**: Fetch с обработкой ошибок (`services/api.ts`).
+- **Сборка**: Vite.
 
-## Type Support for `.vue` Imports in TS
+## **Структура**
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
-npm install
+```plaintext
+frontend/
+├── README.md                # Этот файл
+├── package.json             # Зависимости (npm install)
+├── vite.config.ts           # Конфигурация Vite
+├── env.d.ts                 # TypeScript определения
+├── tsconfig*.json           # Конфигурации TypeScript
+├── .prettierrc.json         # Настройки Prettier
+├── public/                  # Статические файлы
+│   └── images/m2logo.webp   # Логотип
+└── src/                     # Исходники
+    ├── App.vue              # Главный компонент
+    ├── main.ts              # Entry point
+    ├── assets/main.css      # Основные стили
+    ├── components/          # Компоненты (FileUpload, CheckResults, FilterPanel и т.д.)
+    ├── pages/               # Страницы (HomePage, HistoryPage, ResultPage, LoginPage)
+    ├── router/index.ts      # Роутинг
+    ├── services/api.ts      # API-клиент
+    └── stores/auth.ts       # Хранилище Pinia для аутентификации
 ```
 
-### Compile and Hot-Reload for Development
+## **Установка и Запуск**
 
-```sh
-npm run dev
-```
+### **Предварительные требования**
+- **Node.js** 18+.
+- **Git**.
 
-### Type-Check, Compile and Minify for Production
+### **Шаги**
+1. **Клонируйте репозиторий** (или перейдите в `frontend`):
+   ```bash
+   cd frontend
+   ```
 
-```sh
-npm run build
-```
-"# vue-digital-assistant-enginee" 
+2. **Установите зависимости**:
+   ```bash
+   npm install
+   ```
+
+3. **Конфигурация**:
+   - Создайте файл `.env.production`:
+     ```plaintext
+     VITE_API_BASE_URL=http://localhost:8234
+     ```
+
+4. **Запустите приложение**:
+   ```bash
+   npm run dev
+   ```
+   Frontend доступен на `http://localhost:5173`.
+
+## **Использование**
+- **Вход**: Перейдите на `/login` для аутентификации.
+- **Загрузка**: На главной странице (`/`) используйте `FileUpload.vue` для отправки PDF.
+- **История**: Просмотрите проверки на `/history`.
+- **Результаты**: Детали анализа на `/result/:id` с возможностью скачать оригинал или аннотированный PDF.
+- **Тема**: Переключайте темный/светлый режим через иконку Sun/Moon.
+
+**Пример результата** (на странице `/result/:id`):
+- **Файл**: drawing.pdf
+- **Дата загрузки**: 4 октября 2025, 06:22
+- **Нарушений**: 1
+- **Детали**: Пункт 1.1.1 — Шифр 'ABC.123.456ВО' не соответствует типу.
