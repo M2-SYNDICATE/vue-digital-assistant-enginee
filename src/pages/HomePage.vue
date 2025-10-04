@@ -9,13 +9,13 @@ import { ChartColumnIncreasing } from 'lucide-vue-next'
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 
-// Тип для результатов проверки
+// Тип для результатов проверки - должен совпадать с типом в FileUpload
 interface CheckResult {
   id: string
   fileName: string
   fileType: string
   uploadDate: string
-  status: 'checking' | 'compliant' | 'non-compliant'
+  status: 'checking' | 'compliant' | 'non-compliant' | 'processing'
   violations: Array<{
     gostNumber: string
     section: string

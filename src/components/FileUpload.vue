@@ -8,7 +8,7 @@ interface CheckResult {
   fileName: string
   fileType: string
   uploadDate: string
-  status: 'checking' | 'compliant' | 'non-compliant'
+  status: 'checking' | 'compliant' | 'non-compliant' | 'processing'
   violations: Array<{
     gostNumber: string
     section: string
@@ -21,7 +21,7 @@ interface CheckResult {
 interface FileItem {
   file: File
   id: string
-  status: 'pending' | 'checking' | 'completed' | 'error'
+  status: 'pending' | 'checking' | 'completed' | 'error' | 'processing'
   result?: CheckResult
   error?: string
 }
@@ -43,7 +43,8 @@ const completedFiles = computed(
   () => uploadedFiles.value.filter((f) => f.status === 'completed' || f.status === 'error').length,
 )
 const checkingFiles = computed(
-  () => uploadedFiles.value.filter((f) => f.status === 'checking').length,
+  () =>
+    uploadedFiles.value.filter((f) => f.status === 'checking' || f.status === 'processing').length,
 )
 const progressPercentage = computed(() => {
   if (totalFiles.value === 0) return 0
@@ -124,19 +125,35 @@ const startCheck = async () => {
       // Загружаем файл через API
       const uploadResponse = await api.uploadFile(fileItem.file)
 
+      // Проверяем статус ответа
+      let processingStatus: 'compliant' | 'non-compliant' | 'processing' = 'compliant'
+      if (uploadResponse.status === 'processing') {
+        processingStatus = 'processing'
+        fileItem.status = 'processing'
+      } else if (uploadResponse.status === 'completed') {
+        processingStatus = 'compliant'
+        fileItem.status = 'completed'
+      } else {
+        processingStatus = 'non-compliant'
+        fileItem.status = 'completed'
+      }
+
       // Формируем результат проверки из ответа API
       const result: CheckResult = {
         id: uploadResponse.doc_id,
         fileName: uploadResponse.filename,
         fileType: uploadResponse.filename.split('.').pop()?.toUpperCase() || 'Unknown',
         uploadDate: uploadResponse.upload_date,
-        status: uploadResponse.status === 'completed' ? 'compliant' : 'non-compliant',
+        status: processingStatus,
         violations: [], // API должен возвращать нарушения, если они есть
         complianceScore: 100, // API должен возвращать оценку соответствия, если доступна
       }
 
       fileItem.result = result
-      fileItem.status = 'completed'
+      // Если статус не processing, то завершаем как completed
+      if (processingStatus !== 'processing') {
+        fileItem.status = 'completed'
+      }
       results.push(result)
 
       console.log('FileUpload: Completed upload for:', fileItem.file.name, uploadResponse)
@@ -166,6 +183,7 @@ const getStatusIcon = (status: string) => {
     case 'pending':
       return Clock
     case 'checking':
+    case 'processing':
       return Clock
     case 'completed':
       return CheckCircle
@@ -181,6 +199,7 @@ const getStatusColor = (status: string) => {
     case 'pending':
       return isDarkMode.value ? 'text-gray-400' : 'text-gray-500'
     case 'checking':
+    case 'processing':
       return isDarkMode.value ? 'text-blue-400' : 'text-blue-600'
     case 'completed':
       return isDarkMode.value ? 'text-green-400' : 'text-green-600'
@@ -197,6 +216,8 @@ const getStatusText = (fileItem: FileItem) => {
       return 'Ожидает'
     case 'checking':
       return 'Загружается...'
+    case 'processing':
+      return 'Загружен и находится в обработке'
     case 'completed':
       return fileItem.result?.status === 'compliant' ? 'Загружен' : 'Загружен'
     case 'error':
@@ -357,7 +378,9 @@ const getStatusText = (fileItem: FileItem) => {
             :class="[
               'flex items-center justify-between p-3 rounded-lg border transition-all',
               isDarkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50 border-gray-200',
-              fileItem.status === 'checking' ? 'ring-2 ring-blue-500/20' : '',
+              fileItem.status === 'checking' || fileItem.status === 'processing'
+                ? 'ring-2 ring-blue-500/20'
+                : '',
               fileItem.status === 'error' ? 'ring-2 ring-red-500/20' : '',
             ]"
           >
@@ -365,7 +388,7 @@ const getStatusText = (fileItem: FileItem) => {
               <div
                 :class="[
                   'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                  fileItem.status === 'checking'
+                  fileItem.status === 'checking' || fileItem.status === 'processing'
                     ? isDarkMode
                       ? 'bg-blue-600'
                       : 'bg-blue-100'
@@ -386,7 +409,7 @@ const getStatusText = (fileItem: FileItem) => {
                   :is="getStatusIcon(fileItem.status)"
                   :class="[
                     'w-4 h-4',
-                    fileItem.status === 'checking'
+                    fileItem.status === 'checking' || fileItem.status === 'processing'
                       ? isDarkMode
                         ? 'text-white animate-spin'
                         : 'text-blue-600 animate-spin'
@@ -421,7 +444,11 @@ const getStatusText = (fileItem: FileItem) => {
                     {{ getStatusText(fileItem) }}
                   </span>
                   <span
-                    v-if="fileItem.result && fileItem.result.complianceScore"
+                    v-if="
+                      fileItem.result &&
+                      fileItem.result.complianceScore &&
+                      fileItem.status !== 'processing'
+                    "
                     :class="['text-xs font-medium', isDarkMode ? 'text-gray-300' : 'text-gray-700']"
                   >
                     {{ fileItem.result.complianceScore }}%

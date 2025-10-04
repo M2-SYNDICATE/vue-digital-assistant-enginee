@@ -2,7 +2,16 @@
 import { inject, ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, handleApiError, type DetailedResult } from '@/services/api'
-import { History, Download, FileDown, FileText, AlertTriangle, CheckCircle } from 'lucide-vue-next'
+import {
+  History,
+  Download,
+  FileDown,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  RefreshCw,
+} from 'lucide-vue-next'
 
 const props = defineProps<{
   id: string
@@ -15,14 +24,39 @@ const router = useRouter()
 const result = ref<DetailedResult | null>(null)
 const isLoading = ref(true)
 const error = ref<string | null>(null)
+const isProcessing = ref(false) // Добавляем состояние обработки
 
 const resultId = computed(() => props.id || (route.params.id as string))
 
-onMounted(async () => {
+const loadResult = async () => {
   try {
     console.log('Loading result with ID:', resultId.value)
     const detailedResult = await api.getResult(resultId.value)
-    result.value = detailedResult
+
+    // Проверяем статус
+    if (detailedResult && (detailedResult as any).status === 'processing') {
+      isProcessing.value = true
+      // Можно добавить автоматическое обновление через интервал
+      const pollForResult = async () => {
+        try {
+          const updatedResult = await api.getResult(resultId.value)
+          if (updatedResult && (updatedResult as any).status !== 'processing') {
+            result.value = updatedResult
+            isProcessing.value = false
+          } else {
+            setTimeout(pollForResult, 3000) // Проверяем каждые 3 секунды
+          }
+        } catch (err) {
+          console.error('Polling error:', err)
+          const errorMessage = handleApiError(err)
+          error.value = `Ошибка при проверке статуса: ${errorMessage}`
+          isProcessing.value = false
+        }
+      }
+      setTimeout(pollForResult, 3000)
+    } else {
+      result.value = detailedResult
+    }
   } catch (err) {
     console.error('Error loading result:', err)
     const errorMessage = handleApiError(err)
@@ -30,6 +64,10 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+onMounted(async () => {
+  await loadResult()
 })
 
 const goBack = () => {
@@ -42,6 +80,15 @@ const goToHistory = () => {
 
 const goToHome = () => {
   router.push('/')
+}
+
+const refreshResult = async () => {
+  if (isProcessing.value) return // Не обновляем, если уже в процессе обработки
+
+  isLoading.value = true
+  error.value = null
+  result.value = null
+  await loadResult()
 }
 
 // Функция для получения цвета иконки нарушения
@@ -75,6 +122,7 @@ const downloadAnnotatedFile = async () => {
     alert(`Ошибка скачивания аннотированного файла: ${errorMessage}`)
   }
 }
+
 // Функция для скачивания исходного файла
 const downloadOriginalFile = async () => {
   try {
@@ -148,18 +196,34 @@ const getErrorDescription = (errorPoint: string) => {
           Назад
         </button>
 
-        <button
-          @click="goToHistory"
-          :class="[
-            'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-            isDarkMode
-              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-          ]"
-        >
-          <History class="w-4 h-4 mr-2" />
-          Все проверки
-        </button>
+        <div class="flex space-x-3">
+          <button
+            @click="refreshResult"
+            :disabled="isLoading || isProcessing"
+            :class="[
+              'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50',
+            ]"
+          >
+            <RefreshCw :class="['w-4 h-4 mr-2', isLoading || isProcessing ? 'animate-spin' : '']" />
+            Обновить
+          </button>
+
+          <button
+            @click="goToHistory"
+            :class="[
+              'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+            ]"
+          >
+            <History class="w-4 h-4 mr-2" />
+            Все проверки
+          </button>
+        </div>
       </div>
     </div>
 
@@ -177,8 +241,67 @@ const getErrorDescription = (errorPoint: string) => {
       </div>
     </div>
 
+    <!-- Processing State -->
+    <div v-if="isProcessing" class="max-w-2xl mx-auto">
+      <div
+        :class="[
+          'rounded-lg border p-8 text-center',
+          isDarkMode
+            ? 'bg-blue-900/20 border-blue-800 text-blue-400'
+            : 'bg-blue-50 border-blue-200 text-blue-600',
+        ]"
+      >
+        <Clock class="w-12 h-12 mx-auto mb-4" />
+        <h3 :class="['text-lg font-medium mb-2', isDarkMode ? 'text-blue-300' : 'text-blue-800']">
+          В обработке
+        </h3>
+        <p class="mb-6">Ваш документ находится в процессе анализа. Пожалуйста, подождите.</p>
+        <div class="space-x-4">
+          <button
+            @click="refreshResult"
+            :disabled="isLoading || isProcessing"
+            :class="[
+              'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50',
+            ]"
+          >
+            <RefreshCw :class="['w-4 h-4 mr-2', isLoading || isProcessing ? 'animate-spin' : '']" />
+            Обновить
+          </button>
+          <button
+            @click="goToHistory"
+            :class="[
+              'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+            ]"
+          >
+            <History class="w-4 h-4 mr-2" />
+            Все проверки
+          </button>
+          <button
+            @click="goToHome"
+            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
+              />
+            </svg>
+            Новая проверка
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Results -->
-    <div v-if="result && !isLoading && !error" class="space-y-8">
+    <div v-else-if="result && !isLoading && !error" class="space-y-8">
       <!-- Document Info -->
       <div
         :class="[
@@ -248,6 +371,19 @@ const getErrorDescription = (errorPoint: string) => {
         >
           <Download class="w-4 h-4 mr-2" />
           Скачать исходный файл
+        </button>
+        <button
+          @click="refreshResult"
+          :disabled="isLoading || isProcessing"
+          :class="[
+            'inline-flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors min-h-[44px]',
+            isDarkMode
+              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50',
+          ]"
+        >
+          <RefreshCw :class="['w-4 h-4 mr-2', isLoading || isProcessing ? 'animate-spin' : '']" />
+          Обновить
         </button>
       </div>
 
@@ -353,6 +489,19 @@ const getErrorDescription = (errorPoint: string) => {
         </h3>
         <p class="mb-6">{{ error }}</p>
         <div class="space-x-4">
+          <button
+            @click="refreshResult"
+            :disabled="isLoading || isProcessing"
+            :class="[
+              'inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50',
+            ]"
+          >
+            <RefreshCw :class="['w-4 h-4 mr-2', isLoading || isProcessing ? 'animate-spin' : '']" />
+            Обновить
+          </button>
           <button
             @click="goToHistory"
             :class="[
