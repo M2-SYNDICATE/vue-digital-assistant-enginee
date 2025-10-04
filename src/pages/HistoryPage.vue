@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref, computed, onMounted } from 'vue'
+import { inject, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   FileChartPie,
@@ -20,7 +20,7 @@ interface CheckResult {
   fileName: string
   fileType: string
   uploadDate: string
-  status: 'checking' | 'compliant' | 'non-compliant'
+  status: 'processing' | 'completed'
   violations: never[] // пустой массив, так как детали нарушений не приходят в истории
   complianceScore: number
   totalViolations: number
@@ -42,6 +42,7 @@ const filters = ref({
 
 // Загрузка
 const isLoading = ref(false)
+const intervalId = ref<ReturnType<typeof setInterval> | null>(null)
 
 // Загрузка истории из API
 const loadHistory = async () => {
@@ -59,7 +60,7 @@ const loadHistory = async () => {
         fileName: item.filename,
         fileType: item.filename.split('.').pop()?.toUpperCase() || 'Unknown',
         uploadDate: item.upload_date,
-        status: item.total_violations > 0 ? 'non-compliant' : 'compliant',
+        status: item.status === 'processing' ? 'processing' : 'completed',
         violations: [],
         complianceScore: calculatedScore,
         totalViolations: item.total_violations,
@@ -81,8 +82,41 @@ const loadHistory = async () => {
   }
 }
 
-onMounted(() => {
-  loadHistory()
+// Запуск автоматического обновления для документов в статусе processing
+const startAutoRefresh = () => {
+  // Очищаем предыдущий интервал, если он был
+  if (intervalId.value) {
+    clearInterval(intervalId.value)
+  }
+
+  // Проверяем, есть ли документы в статусе processing
+  const hasProcessingDocs = results.value.some((result) => result.status === 'processing')
+
+  if (hasProcessingDocs) {
+    // Запускаем интервал для обновления каждые 10 секунд
+    intervalId.value = setInterval(async () => {
+      await loadHistory()
+      // Проверяем снова, нужно ли продолжать обновление
+      const stillHasProcessingDocs = results.value.some((result) => result.status === 'processing')
+      if (!stillHasProcessingDocs && intervalId.value) {
+        clearInterval(intervalId.value)
+        intervalId.value = null
+      }
+    }, 10000) // 10 секунд
+  }
+}
+
+onMounted(async () => {
+  await loadHistory()
+  startAutoRefresh()
+})
+
+// Очищаем интервал при размонтировании компонента
+onUnmounted(() => {
+  if (intervalId.value) {
+    clearInterval(intervalId.value)
+    intervalId.value = null
+  }
 })
 
 // Функции управления фильтрами и поиском
@@ -184,11 +218,9 @@ const goToHome = () => {
 // Вспомогательные функции для отображения
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case 'compliant':
+    case 'completed':
       return CheckCircle
-    case 'non-compliant':
-      return XCircle
-    case 'checking':
+    case 'processing':
       return AlertCircle
     default:
       return AlertCircle
@@ -198,23 +230,19 @@ const getStatusIcon = (status: string) => {
 const getStatusColor = (status: string) => {
   if (isDarkMode.value) {
     switch (status) {
-      case 'compliant':
+      case 'completed':
         return 'text-green-400'
-      case 'non-compliant':
-        return 'text-red-400'
-      case 'checking':
-        return 'text-yellow-400'
+      case 'processing':
+        return 'text-blue-400'
       default:
         return 'text-gray-400'
     }
   } else {
     switch (status) {
-      case 'compliant':
+      case 'completed':
         return 'text-green-600'
-      case 'non-compliant':
-        return 'text-red-600'
-      case 'checking':
-        return 'text-yellow-600'
+      case 'processing':
+        return 'text-blue-600'
       default:
         return 'text-gray-600'
     }
@@ -223,12 +251,10 @@ const getStatusColor = (status: string) => {
 
 const getStatusText = (status: string) => {
   switch (status) {
-    case 'compliant':
-      return 'Соответствует'
-    case 'non-compliant':
-      return 'Не соответствует'
-    case 'checking':
-      return 'Проверяется'
+    case 'completed':
+      return 'Завершено'
+    case 'processing':
+      return 'В обработке'
     default:
       return 'Неизвестно'
   }
@@ -466,12 +492,24 @@ const formatDateMobile = (dateString: string) => {
                   <Calendar class="w-4 h-4 mr-1" />
                   {{ formatDate(result.uploadDate) }}
                 </div>
+
+                <!-- Status indicator -->
+                <div class="flex items-center">
+                  <component
+                    :is="getStatusIcon(result.status)"
+                    :class="['w-4 h-4 mr-1', getStatusColor(result.status)]"
+                  />
+                  <span :class="['text-sm', getStatusColor(result.status)]">
+                    {{ getStatusText(result.status) }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="flex items-center space-x-4">
-            <div class="text-right">
+            <!-- Показываем количество ошибок только для завершенных документов -->
+            <div v-if="result.status === 'completed'" class="text-right">
               <div :class="['text-2xl font-bold', getViolationColor(result.totalViolations)]">
                 {{ result.totalViolations }}
               </div>
@@ -479,6 +517,7 @@ const formatDateMobile = (dateString: string) => {
                 {{ getViolationText(result.totalViolations) }}
               </div>
             </div>
+
             <svg
               class="w-5 h-5 text-gray-400"
               fill="none"
@@ -527,10 +566,23 @@ const formatDateMobile = (dateString: string) => {
                   >
                     {{ result.fileType }}
                   </span>
+
+                  <!-- Status indicator for mobile -->
+                  <div class="flex items-center">
+                    <component
+                      :is="getStatusIcon(result.status)"
+                      :class="['w-3 h-3 mr-1', getStatusColor(result.status)]"
+                    />
+                    <span :class="['text-xs', getStatusColor(result.status)]">
+                      {{ getStatusText(result.status) }}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="text-right">
+
+            <!-- Показываем количество ошибок только для завершенных документов -->
+            <div v-if="result.status === 'completed'" class="text-right">
               <div :class="['text-lg font-bold', getViolationColor(result.totalViolations)]">
                 {{ result.totalViolations }}
               </div>
@@ -548,9 +600,9 @@ const formatDateMobile = (dateString: string) => {
           </div>
         </div>
 
-        <!-- Violations (both layouts) -->
+        <!-- Violations (both layouts) - показываем только для завершенных документов -->
         <div
-          v-if="result.totalViolations > 0"
+          v-if="result.status === 'completed' && result.totalViolations > 0"
           :class="[
             'pt-3 sm:pt-4 border-t',
             isDarkMode ? 'border-gray-700 mt-3 sm:mt-4' : 'border-gray-200 mt-3 sm:mt-4',

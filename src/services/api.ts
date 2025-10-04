@@ -45,6 +45,7 @@ export interface HistoryItem {
   error_points: string[]
   error_counts: ErrorCounts
   total_violations: number
+  status: 'processing' | 'completed' | 'error' // Добавлено поле статуса
 }
 
 export interface DetailedResult {
