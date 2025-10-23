@@ -16,6 +16,8 @@ import {
   RefreshCw,
   FileText,
   Filter,
+  SquarePen,
+  FileScan,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -778,7 +780,7 @@ const openFile = (url: string) => {
               : 'bg-red-700 text-white hover:bg-red-800',
           ]"
         >
-          <FileText class="w-4 h-4 mr-2" />
+          <FileScan class="w-4 h-4 mr-2" />
           Файл с ошибками
         </button>
 
@@ -792,7 +794,7 @@ const openFile = (url: string) => {
               : 'bg-green-600 text-white hover:bg-green-700',
           ]"
         >
-          <Download class="w-4 h-4 mr-2" />
+          <FileScan class="w-4 h-4 mr-2" />
           Исходный файл
         </button>
 
@@ -813,9 +815,9 @@ const openFile = (url: string) => {
           <RefreshCw class="w-4 h-4 mr-2" :class="{ 'animate-spin': isUpdatingStatus }" />
           {{ isUpdatingStatus ? 'Обновление...' : 'Отметить все как исправлено' }}
         </button>
-        <!-- Если все пункты исправлены — показываем кнопку "Итоговый файл" -->
+        <!-- Итоговый файл доступен только при статусе "согласовано" или "снято" -->
         <button
-          v-if="result.error_points.every((p) => getCurrentStatus(p.occ_id) === 'fixed')"
+          v-if="['approved', 'removed'].includes(result.status)"
           @click="downloadAnnotatedFile"
           :class="[
             'inline-flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors min-h-[44px]',
@@ -839,7 +841,7 @@ const openFile = (url: string) => {
               : 'bg-purple-600 text-white hover:bg-purple-700',
           ]"
         >
-          <FileText class="w-4 h-4 mr-2" />
+          <SquarePen class="w-4 h-4 mr-2" />
           Внести изменения
         </button>
       </div>
@@ -994,7 +996,7 @@ const openFile = (url: string) => {
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
                         ]"
                       >
-                        <FileText class="w-3 h-3 mr-1" />
+                        <FileScan class="w-3 h-3 mr-1" />
                         PDF с ошибкой
                       </button>
                       <!-- Кнопка для скачивания исправленного PDF -->
@@ -1008,7 +1010,7 @@ const openFile = (url: string) => {
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
                         ]"
                       >
-                        <FileDown class="w-3 h-3 mr-1" />
+                        <FileScan class="w-3 h-3 mr-1" />
                         Исправленный PDF
                       </button>
                     </div>
@@ -1207,7 +1209,7 @@ const openFile = (url: string) => {
                                   : 'bg-blue-100 text-blue-700 hover:bg-blue-200',
                               ]"
                             >
-                              <FileDown class="w-3 h-3 mr-1" />
+                              <FileScan class="w-3 h-3 mr-1" />
                               Загруженный файл
                             </button>
 
@@ -1224,7 +1226,7 @@ const openFile = (url: string) => {
                                   : 'bg-red-100 text-red-700 hover:bg-red-200',
                               ]"
                             >
-                              <FileText class="w-3 h-3 mr-1" />
+                              <FileScan class="w-3 h-3 mr-1" />
                               Файл с ошибкой
                             </button>
                           </div>
