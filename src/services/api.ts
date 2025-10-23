@@ -45,7 +45,7 @@ export interface HistoryItem {
   error_points: string[]
   error_counts: ErrorCounts
   total_violations: number
-  status: 'processing' | 'completed' | 'error' // Добавлено поле статуса
+  status: 'processing' | 'completed' | 'error'
 }
 
 export interface DetailedResult {
@@ -297,6 +297,63 @@ class ApiClient {
     })
   }
 
+  // 7. POST /upload?doc_id={id}&fixed_ids={ids} - Upload fixed version
+  async submitFixes(docId: string, file: File, fixedIds: string[]): Promise<{ message: string }> {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    // Собираем строку параметров
+    const query = `?doc_id=${encodeURIComponent(docId)}&fixed_ids=${fixedIds.join(',')}`
+
+    return await this.request<{ message: string }>(`/upload${query}`, {
+      method: 'POST',
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+      body: formData,
+    })
+  }
+
+  // 8. GET /download_fixed/{doc_id}?occ_id=... - Скачать исправленный PDF для конкретного пункта
+  async downloadFixedPdf(docId: string, occId: string): Promise<Blob> {
+    const response = await this.request<Response>(`/download_fixed/${docId}?occ_id=${occId}`, {
+      method: 'GET',
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    })
+
+    if (response instanceof Response) {
+      return await response.blob()
+    }
+
+    throw new ApiError({
+      message: 'Invalid response format for fixed PDF download',
+      code: 'INVALID_RESPONSE',
+    })
+  }
+
+  // 9. GET /process-analysis - Анализ процессов
+  async getProcessAnalysis(
+    startDate: string,
+    endDate: string,
+    includeSessions: boolean = true,
+  ): Promise<ProcessAnalysisData> {
+    const params = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+      include_sessions: includeSessions.toString(),
+    })
+
+    return await this.request<ProcessAnalysisData>(`/api/process-analysis?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+    })
+  }
+
   // Logout - Clear stored token
   logout(): void {
     TokenManager.removeToken()
@@ -326,6 +383,13 @@ export const api = {
   // Data retrieval
   getHistory: () => apiClient.getHistory(),
   getResult: (docId: string) => apiClient.getResult(docId),
+  submitFixes: (docId: string, file: File, fixedIds: string[]) =>
+    apiClient.submitFixes(docId, file, fixedIds),
+  downloadFixedPdf: (docId: string, occId: string) => apiClient.downloadFixedPdf(docId, occId),
+
+  // Analysis
+  getProcessAnalysis: (startDate: string, endDate: string, includeSessions = true) =>
+    apiClient.getProcessAnalysis(startDate, endDate, includeSessions),
 }
 
 // Error handling utilities

@@ -9,6 +9,10 @@ import {
   AlertCircle,
   Search,
   X,
+  Clock,
+  ThumbsUp,
+  ThumbsDown,
+  FileText,
 } from 'lucide-vue-next'
 import SearchInput from '../components/SearchInput.vue'
 import FilterPanel from '../components/FilterPanel.vue'
@@ -21,10 +25,12 @@ interface CheckResult {
   fileType: string
   uploadDate: string
   status: 'processing' | 'completed'
+  correctionStatus: 'processing' | 'rejected' | 'approved' | 'removed'
   violations: never[] // пустой массив, так как детали нарушений не приходят в истории
   complianceScore: number
   totalViolations: number
   errorCounts: ErrorCounts
+  correctionStatusAuthor?: string
 }
 
 const isDarkMode = inject('isDarkMode', ref(false))
@@ -38,6 +44,7 @@ const searchQuery = ref('')
 const filters = ref({
   status: 'all',
   dateRange: 'all',
+  correctionStatus: 'all',
 })
 
 // Загрузка
@@ -56,11 +63,31 @@ const loadHistory = async () => {
       const calculatedScore = Math.max(0, maxScore - violationPenalty)
 
       return {
-        id: item.doc_id.toString(),
+        id: item.id.toString(),
         fileName: item.filename,
         fileType: item.filename.split('.').pop()?.toUpperCase() || 'Unknown',
         uploadDate: item.upload_date,
-        status: item.status === 'processing' ? 'processing' : 'completed',
+        status:
+          item.processing_status === 'in_progress'
+            ? 'processing'
+            : item.processing_status === 'complete'
+              ? 'completed'
+              : 'processing',
+        correctionStatus: (() => {
+          switch (item.status) {
+            case 'approved':
+              return 'approved' // Согласовано
+            case 'rejected':
+              return 'rejected' // Отклонено
+            case 'removed':
+              return 'removed' // Снято
+            default:
+              return '-' // Любые другие статусы — просто "-"
+          }
+        })(),
+
+        correctionStatusAuthor: item.status === 'rejected' ? item.status_author || '' : '',
+
         violations: [],
         complianceScore: calculatedScore,
         totalViolations: item.total_violations,
@@ -121,7 +148,7 @@ onUnmounted(() => {
 
 // Функции управления фильтрами и поиском
 const resetFilters = () => {
-  filters.value = { status: 'all', dateRange: 'all' }
+  filters.value = { status: 'all', dateRange: 'all', correctionStatus: 'all' }
   handleFiltersReset()
 }
 
@@ -158,9 +185,16 @@ const filteredResults = computed(() => {
     resultsData = resultsData.filter((result) => result.fileName.toLowerCase().includes(query))
   }
 
-  // Фильтр по статусу
+  // Фильтр по статусу проверки
   if (filters.value.status !== 'all') {
     resultsData = resultsData.filter((result) => result.status === filters.value.status)
+  }
+
+  // Фильтр по статусу исправления
+  if (filters.value.correctionStatus !== 'all') {
+    resultsData = resultsData.filter(
+      (result) => result.correctionStatus === filters.value.correctionStatus,
+    )
   }
 
   // Фильтр по дате
@@ -258,6 +292,98 @@ const getStatusText = (status: string) => {
     default:
       return 'Неизвестно'
   }
+}
+
+// Функции для статуса исправления согласно вашим настройкам
+const getCorrectionStatusIcon = (status: string) => {
+  switch (status) {
+    case 'approved':
+      return ThumbsUp
+    case 'rejected':
+      return ThumbsDown
+    case 'removed':
+      return FileText
+    case 'processing':
+    default:
+      return Clock
+  }
+}
+
+const getCorrectionStatusColor = (status: string) => {
+  if (isDarkMode.value) {
+    switch (status) {
+      case 'approved':
+        return 'text-green-400'
+      case 'rejected':
+        return 'text-red-400'
+      case 'removed':
+        return 'text-gray-400'
+      case 'processing':
+      default:
+        return 'text-blue-400'
+    }
+  } else {
+    switch (status) {
+      case 'approved':
+        return 'text-green-600'
+      case 'rejected':
+        return 'text-red-600'
+      case 'removed':
+        return 'text-gray-600'
+      case 'processing':
+      default:
+        return 'text-blue-600'
+    }
+  }
+}
+
+const getCorrectionStatusText = (status: string) => {
+  switch (status) {
+    case 'approved':
+      return 'Согласовано'
+    case 'rejected':
+      return 'Отклонено'
+    case 'removed':
+      return 'Снято'
+    case 'processing':
+    default:
+      return 'В обработке'
+  }
+}
+
+// Функции для стилей статуса исправления (как в вашем примере)
+const getCorrectionStatusStyles = (status: string) => {
+  const styles = {
+    processing: {
+      label: 'В обработке',
+      color: isDarkMode.value ? 'text-blue-400' : 'text-blue-600',
+      bgColor: isDarkMode.value ? 'bg-blue-900/20' : 'bg-blue-50',
+      borderColor: isDarkMode.value ? 'border-blue-800' : 'border-blue-200',
+      icon: '⏳',
+    },
+    approved: {
+      label: 'Согласовано',
+      color: isDarkMode.value ? 'text-green-400' : 'text-green-600',
+      bgColor: isDarkMode.value ? 'bg-green-900/20' : 'bg-green-50',
+      borderColor: isDarkMode.value ? 'border-green-800' : 'border-green-200',
+      icon: '✅',
+    },
+    rejected: {
+      label: 'Отклонено',
+      color: isDarkMode.value ? 'text-red-400' : 'text-red-600',
+      bgColor: isDarkMode.value ? 'bg-red-900/20' : 'bg-red-50',
+      borderColor: isDarkMode.value ? 'border-red-800' : 'border-red-200',
+      icon: '❌',
+    },
+    removed: {
+      label: 'Снято',
+      color: isDarkMode.value ? 'text-gray-400' : 'text-gray-600',
+      bgColor: isDarkMode.value ? 'bg-gray-900/20' : 'bg-gray-50',
+      borderColor: isDarkMode.value ? 'border-gray-800' : 'border-gray-200',
+      icon: '📝',
+    },
+  }
+  return styles[status as keyof typeof styles] || styles.processing
 }
 
 const getViolationColor = (count: number) => {
@@ -441,7 +567,10 @@ const formatDateMobile = (dateString: string) => {
             </p>
             <p :class="['text-xs sm:text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
               {{
-                searchQuery || filters.status !== 'all' || filters.dateRange !== 'all'
+                searchQuery ||
+                filters.status !== 'all' ||
+                filters.dateRange !== 'all' ||
+                filters.correctionStatus !== 'all'
                   ? 'Найдено'
                   : 'Всего проверок'
               }}
@@ -501,6 +630,33 @@ const formatDateMobile = (dateString: string) => {
                   />
                   <span :class="['text-sm', getStatusColor(result.status)]">
                     {{ getStatusText(result.status) }}
+                  </span>
+                </div>
+
+                <!-- Correction status indicator -->
+                <div
+                  :class="[
+                    'flex items-center px-2 py-1 rounded text-sm border',
+                    getCorrectionStatusStyles(result.correctionStatus).bgColor,
+                    getCorrectionStatusStyles(result.correctionStatus).borderColor,
+                  ]"
+                >
+                  <span class="mr-1">{{
+                    getCorrectionStatusStyles(result.correctionStatus).icon
+                  }}</span>
+                  <span
+                    :class="[
+                      'font-medium',
+                      getCorrectionStatusStyles(result.correctionStatus).color,
+                    ]"
+                  >
+                    {{ getCorrectionStatusStyles(result.correctionStatus).label }}
+                    <span
+                      v-if="result.correctionStatus === 'rejected' && result.correctionStatusAuthor"
+                      class="ml-1 opacity-80"
+                    >
+                      — {{ result.correctionStatusAuthor }}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -597,6 +753,24 @@ const formatDateMobile = (dateString: string) => {
               <Calendar class="w-3 h-3 mr-1" />
               {{ formatDateMobile(result.uploadDate) }}
             </div>
+
+            <!-- Correction status for mobile -->
+            <div
+              :class="[
+                'flex items-center px-2 py-1 rounded text-xs border',
+                getCorrectionStatusStyles(result.correctionStatus).bgColor,
+                getCorrectionStatusStyles(result.correctionStatus).borderColor,
+              ]"
+            >
+              <span class="mr-1">{{
+                getCorrectionStatusStyles(result.correctionStatus).icon
+              }}</span>
+              <span
+                :class="['font-medium', getCorrectionStatusStyles(result.correctionStatus).color]"
+              >
+                {{ getCorrectionStatusStyles(result.correctionStatus).label }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -641,7 +815,10 @@ const formatDateMobile = (dateString: string) => {
     <div
       v-else-if="
         !isLoading &&
-        (searchQuery || filters.status !== 'all' || filters.dateRange !== 'all') &&
+        (searchQuery ||
+          filters.status !== 'all' ||
+          filters.dateRange !== 'all' ||
+          filters.correctionStatus !== 'all') &&
         filteredResults.length === 0
       "
       class="p-8 sm:p-12 text-center"
@@ -675,7 +852,11 @@ const formatDateMobile = (dateString: string) => {
           Очистить поиск
         </button>
         <button
-          v-if="filters.status !== 'all' || filters.dateRange !== 'all'"
+          v-if="
+            filters.status !== 'all' ||
+            filters.dateRange !== 'all' ||
+            filters.correctionStatus !== 'all'
+          "
           @click="resetFilters"
           :class="[
             'inline-flex items-center justify-center px-6 py-3 rounded-lg transition-colors font-medium min-h-[44px]',

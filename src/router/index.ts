@@ -24,6 +24,19 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/process-analysis',
+      name: 'ProcessAnalysis',
+      component: () => import('@/pages/ProcessAnalysisPage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/statistics-on-comments',
+      name: 'StatisticsOnComments',
+      component: () => import('@/pages/StatisticsOnCommentsPage.vue'),
+      meta: { requiresAuth: true },
+    },
+
+    {
       path: '/result/:id',
       name: 'result',
       component: () => import('@/pages/ResultPage.vue'),

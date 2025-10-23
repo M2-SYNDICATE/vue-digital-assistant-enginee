@@ -2,7 +2,19 @@
 import { inject, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Menu, X, Home, Upload, History, Sun, Moon, LogOut, FileText, User } from 'lucide-vue-next'
+import {
+  Menu,
+  X,
+  Home,
+  Upload,
+  History,
+  Sun,
+  Moon,
+  LogOut,
+  FileText,
+  User,
+  BarChart3,
+} from 'lucide-vue-next'
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
@@ -22,6 +34,12 @@ const navigationItems = [
     name: 'История',
     path: '/history',
     icon: History,
+  },
+  { name: 'Анализ процесса', path: '/process-analysis', icon: BarChart3 },
+  {
+    name: 'Статистика по замечаниям',
+    path: '/statistics-on-comments',
+    icon: FileText,
   },
 ]
 
@@ -87,7 +105,7 @@ const isActiveRoute = (path: string) => {
               TechCheck
             </h1>
             <p :class="['text-xs font-mono', isDarkMode ? 'text-gray-400' : 'text-gray-500']">
-              v1.0
+              v2.0
             </p>
           </div>
         </div>
