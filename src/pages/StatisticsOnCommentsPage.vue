@@ -16,7 +16,7 @@ import { api, handleApiError } from '@/services/api'
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
 
-// Типы для статистики
+// --- Типы ---
 interface RequirementStats {
   id: string
   title: string
@@ -41,7 +41,7 @@ interface ViolationDocument {
   }
 }
 
-// Данные статистики
+// --- Состояние ---
 const requirementsStats = ref<RequirementStats[]>([])
 const violationDocuments = ref<ViolationDocument[]>([])
 const isLoading = ref(false)
@@ -53,12 +53,10 @@ const downloadFile = async (filePath: string, suggestedName?: string) => {
 
   try {
     const normalizedPath = filePath.replace(/\\/g, '/')
-    console.log('📥 Запрашиваю файл с сервера через API /download_path:', normalizedPath)
+    console.log('📥 Скачивание через API /download_path:', normalizedPath)
 
-    // Вызов нового API-метода
     const blob = await api.downloadByPath(normalizedPath)
 
-    // Создание ссылки для скачивания
     const blobUrl = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = blobUrl
@@ -73,7 +71,7 @@ const downloadFile = async (filePath: string, suggestedName?: string) => {
   }
 }
 
-// Загрузка статистики
+// --- Загрузка статистики ---
 const loadStatistics = async () => {
   isLoading.value = true
   try {
@@ -105,14 +103,14 @@ const loadStatistics = async () => {
       },
     }))
   } catch (error) {
-    console.error('Error loading statistics:', error)
+    console.error('Ошибка при загрузке статистики:', error)
     alert(`Ошибка загрузки статистики: ${handleApiError(error)}`)
   } finally {
     isLoading.value = false
   }
 }
 
-// Фильтрация документов
+// --- Фильтрация документов ---
 const filteredDocuments = computed(() => {
   if (!selectedRequirement.value) return []
   return violationDocuments.value.filter(
@@ -125,17 +123,56 @@ const selectedRequirementInfo = computed(() => {
   return requirementsStats.value.find((req) => req.id === selectedRequirement.value)
 })
 
-// Открытие PDF аннотированного файла
-const openAnnotatedPdf = async (document: ViolationDocument, event: Event) => {
-  event.stopPropagation()
-  const url = document.violationDetails.pdfAnnotationUrl || document.pdfUrl
-  if (!url) return alert('PDF документ недоступен')
-
-  const fileName = `${document.fileName.replace(/\.[^.]+$/, '')}_violations.pdf`
-  await downloadFile(url, fileName)
+// --- Цвета и иконки по уровню серьёзности ---
+const getSeverityColor = (severity: 'critical' | 'high' | 'medium' | 'low') => {
+  const dark = isDarkMode.value
+  const map = {
+    critical: dark ? 'text-red-400' : 'text-red-600',
+    high: dark ? 'text-orange-400' : 'text-orange-600',
+    medium: dark ? 'text-yellow-400' : 'text-yellow-600',
+    low: dark ? 'text-blue-400' : 'text-blue-600',
+  } as const
+  return map[severity] || (dark ? 'text-gray-400' : 'text-gray-600')
 }
 
-// Остальные функции (viewDocument, formatDate, selectRequirement и т.д.) без изменений
+const getSeverityBgColor = (severity: 'critical' | 'high' | 'medium' | 'low') => {
+  const dark = isDarkMode.value
+  const map = {
+    critical: dark ? 'bg-red-900/20' : 'bg-red-50',
+    high: dark ? 'bg-orange-900/20' : 'bg-orange-50',
+    medium: dark ? 'bg-yellow-900/20' : 'bg-yellow-50',
+    low: dark ? 'bg-blue-900/20' : 'bg-blue-50',
+  } as const
+  return map[severity] || (dark ? 'bg-gray-900/20' : 'bg-gray-50')
+}
+
+const getSeverityBorderColor = (severity: 'critical' | 'high' | 'medium' | 'low') => {
+  const dark = isDarkMode.value
+  const map = {
+    critical: dark ? 'border-red-800' : 'border-red-200',
+    high: dark ? 'border-orange-800' : 'border-orange-200',
+    medium: dark ? 'border-yellow-800' : 'border-yellow-200',
+    low: dark ? 'border-blue-800' : 'border-blue-200',
+  } as const
+  return map[severity] || (dark ? 'border-gray-800' : 'border-gray-200')
+}
+
+const getSeverityIcon = (severity: string) => {
+  switch (severity) {
+    case 'critical':
+      return XCircle
+    case 'high':
+      return AlertCircle
+    case 'medium':
+      return TrendingUp
+    case 'low':
+      return BarChart3
+    default:
+      return AlertCircle
+  }
+}
+
+// --- Остальные действия ---
 const selectRequirement = (requirementId: string) => {
   selectedRequirement.value = requirementId
 }
@@ -148,6 +185,17 @@ const viewDocument = (documentId: string) => {
   router.push(`/result/${documentId}`)
 }
 
+// --- Скачивание аннотированного PDF ---
+const openAnnotatedPdf = async (document: ViolationDocument, event: Event) => {
+  event.stopPropagation()
+  const url = document.violationDetails.pdfAnnotationUrl || document.pdfUrl
+  if (!url) return alert('PDF документ недоступен')
+
+  const fileName = `${document.fileName.replace(/\.[^.]+$/, '')}_violations.pdf`
+  await downloadFile(url, fileName)
+}
+
+// --- Форматирование даты ---
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('ru-RU', {
     year: 'numeric',
