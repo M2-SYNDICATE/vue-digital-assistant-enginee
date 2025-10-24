@@ -10,9 +10,8 @@ import {
   TrendingUp,
   BarChart3,
   ExternalLink,
-  Download,
 } from 'lucide-vue-next'
-import { api, handleApiError, type HistoryItem, type ErrorCounts } from '@/services/api'
+import { api, handleApiError } from '@/services/api'
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
@@ -35,7 +34,7 @@ interface ViolationDocument {
   violationDetails: {
     requirementId: string
     description: string
-    section: string
+    section?: string
     pageNumber?: number
     severity: 'critical' | 'high' | 'medium' | 'low'
     pdfAnnotationUrl?: string
@@ -48,6 +47,32 @@ const violationDocuments = ref<ViolationDocument[]>([])
 const isLoading = ref(false)
 const selectedRequirement = ref<string | null>(null)
 
+// ✅ Новый метод скачивания — через API /download_path
+const downloadFile = async (filePath: string, suggestedName?: string) => {
+  if (!filePath) return alert('Путь к файлу не указан')
+
+  try {
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    console.log('📥 Запрашиваю файл с сервера через API /download_path:', normalizedPath)
+
+    // Вызов нового API-метода
+    const blob = await api.downloadByPath(normalizedPath)
+
+    // Создание ссылки для скачивания
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = suggestedName || normalizedPath.split('/').pop() || 'file.pdf'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('Ошибка при скачивании файла:', err)
+    alert(`Ошибка при скачивании файла: ${handleApiError(err)}`)
+  }
+}
+
 // Загрузка статистики
 const loadStatistics = async () => {
   isLoading.value = true
@@ -55,11 +80,9 @@ const loadStatistics = async () => {
     const response = await api.getRequirementsStats()
     console.log('getRequirementsStats response:', response)
 
-    // ✅ Правильное извлечение данных
     const reqs = response?.requirementsStats || []
     const docs = response?.violationDocuments || []
 
-    // Преобразуем требования
     requirementsStats.value = reqs.map((r: any) => ({
       id: r.id,
       title: r.title,
@@ -68,7 +91,6 @@ const loadStatistics = async () => {
       severity: r.severity,
     }))
 
-    // Преобразуем документы
     violationDocuments.value = docs.map((d: any) => ({
       id: d.id,
       fileName: d.fileName,
@@ -90,7 +112,7 @@ const loadStatistics = async () => {
   }
 }
 
-// Фильтрация документов по выбранному требованию
+// Фильтрация документов
 const filteredDocuments = computed(() => {
   if (!selectedRequirement.value) return []
   return violationDocuments.value.filter(
@@ -98,119 +120,22 @@ const filteredDocuments = computed(() => {
   )
 })
 
-// Получение информации о выбранном требовании
 const selectedRequirementInfo = computed(() => {
   if (!selectedRequirement.value) return null
   return requirementsStats.value.find((req) => req.id === selectedRequirement.value)
 })
 
-// Функции для стилей
-const getSeverityColor = (severity: string) => {
-  if (isDarkMode.value) {
-    switch (severity) {
-      case 'critical':
-        return 'text-red-400'
-      case 'high':
-        return 'text-orange-400'
-      case 'medium':
-        return 'text-yellow-400'
-      case 'low':
-        return 'text-blue-400'
-      default:
-        return 'text-gray-400'
-    }
-  } else {
-    switch (severity) {
-      case 'critical':
-        return 'text-red-600'
-      case 'high':
-        return 'text-orange-600'
-      case 'medium':
-        return 'text-yellow-600'
-      case 'low':
-        return 'text-blue-600'
-      default:
-        return 'text-gray-600'
-    }
-  }
+// Открытие PDF аннотированного файла
+const openAnnotatedPdf = async (document: ViolationDocument, event: Event) => {
+  event.stopPropagation()
+  const url = document.violationDetails.pdfAnnotationUrl || document.pdfUrl
+  if (!url) return alert('PDF документ недоступен')
+
+  const fileName = `${document.fileName.replace(/\.[^.]+$/, '')}_violations.pdf`
+  await downloadFile(url, fileName)
 }
 
-const getSeverityBgColor = (severity: string) => {
-  if (isDarkMode.value) {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-900/20'
-      case 'high':
-        return 'bg-orange-900/20'
-      case 'medium':
-        return 'bg-yellow-900/20'
-      case 'low':
-        return 'bg-blue-900/20'
-      default:
-        return 'bg-gray-900/20'
-    }
-  } else {
-    switch (severity) {
-      case 'critical':
-        return 'bg-red-50'
-      case 'high':
-        return 'bg-orange-50'
-      case 'medium':
-        return 'bg-yellow-50'
-      case 'low':
-        return 'bg-blue-50'
-      default:
-        return 'bg-gray-50'
-    }
-  }
-}
-
-const getSeverityBorderColor = (severity: string) => {
-  if (isDarkMode.value) {
-    switch (severity) {
-      case 'critical':
-        return 'border-red-800'
-      case 'high':
-        return 'border-orange-800'
-      case 'medium':
-        return 'border-yellow-800'
-      case 'low':
-        return 'border-blue-800'
-      default:
-        return 'border-gray-800'
-    }
-  } else {
-    switch (severity) {
-      case 'critical':
-        return 'border-red-200'
-      case 'high':
-        return 'border-orange-200'
-      case 'medium':
-        return 'border-yellow-200'
-      case 'low':
-        return 'border-blue-200'
-      default:
-        return 'border-gray-200'
-    }
-  }
-}
-
-const getSeverityIcon = (severity: string) => {
-  switch (severity) {
-    case 'critical':
-      return XCircle
-    case 'high':
-      return AlertCircle
-    case 'medium':
-      return TrendingUp
-    case 'low':
-      return BarChart3
-    default:
-      return AlertCircle
-  }
-}
-
-// Обработчики
+// Остальные функции (viewDocument, formatDate, selectRequirement и т.д.) без изменений
 const selectRequirement = (requirementId: string) => {
   selectedRequirement.value = requirementId
 }
@@ -221,23 +146,6 @@ const clearSelection = () => {
 
 const viewDocument = (documentId: string) => {
   router.push(`/result/${documentId}`)
-}
-
-// Функция для открытия PDF с аннотациями
-const openAnnotatedPdf = (document: ViolationDocument, event: Event) => {
-  event.stopPropagation()
-
-  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin
-
-  const url = document.violationDetails.pdfAnnotationUrl || document.pdfUrl || null
-
-  if (url) {
-    const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`
-    console.log('🧭 Открываю PDF:', fullUrl)
-    window.open(fullUrl, '_blank')
-  } else {
-    alert('PDF документ недоступен')
-  }
 }
 
 const formatDate = (dateString: string) => {

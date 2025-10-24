@@ -224,7 +224,7 @@ const getSeverityColor = (count: number) => {
 const openAnnotatedFile = () => {
   if (result.value?.file_url_annotated) {
     console.log('📄 annotated_file_url:', result.value.file_url_annotated)
-    openFile(result.value.file_url_annotated)
+    downloadFile(result.value.file_url_annotated)
   } else {
     console.warn('❌ Нет file_url_annotated в result')
   }
@@ -233,7 +233,7 @@ const openAnnotatedFile = () => {
 const openOriginalFile = () => {
   if (result.value?.file_url) {
     console.log('📄 original_file_url:', result.value.file_url)
-    openFile(result.value.file_url)
+    downloadFile(result.value.file_url)
   } else {
     console.warn('❌ Нет file_url в result')
   }
@@ -244,13 +244,41 @@ const openFinalFile = () => {
 
   if (finalUrl && finalUrl.trim() !== '') {
     console.log('📘 Итоговый файл:', finalUrl)
-    openFile(finalUrl)
+    downloadFile(finalUrl)
   } else {
     console.warn('❌ Итоговый файл отсутствует')
   }
 }
 // Скачивание PDF для конкретного пункта
 const openPointPdf = async (pdfUrl: string, point: string) => {}
+
+// 🔽 Вместо прежнего openFile
+const downloadFile = async (filePath: string, suggestedName?: string) => {
+  if (!filePath) {
+    alert('Путь к файлу не указан')
+    return
+  }
+
+  try {
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    console.log('📥 Запрашиваю файл через API:', normalizedPath)
+
+    // ✅ используем единый API-запрос
+    const blob = await api.downloadByPath(normalizedPath)
+
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = suggestedName || normalizedPath.split('/').pop() || 'document.pdf'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('Ошибка при скачивании файла:', err)
+    alert(`Ошибка при скачивании файла: ${handleApiError(err)}`)
+  }
+}
 
 const groupDecisionsByVersion = (decisions: Decision[]) => {
   const grouped: Record<number, Decision[]> = {}
@@ -533,7 +561,7 @@ const submitFixes = async () => {
 const resolveFileUrl = (url: string): string => {
   if (!url) return ''
   const normalized = url.replace(/\\/g, '/')
-  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin
   if (normalized.startsWith('http')) return normalized
   return `${baseUrl}${normalized.startsWith('/') ? '' : '/'}${normalized}`
 }
@@ -1157,7 +1185,7 @@ const openFile = (url: string) => {
                           <div class="flex flex-wrap gap-2 mt-2">
                             <button
                               v-if="decision.file_fix_url && decision.file_fix_url.trim() !== ''"
-                              @click.stop="openFile(decision.file_fix_url)"
+                              @click.stop="downloadFile(decision.file_fix_url)"
                               :class="[
                                 'inline-flex items-center px-3 py-1 rounded text-xs font-medium transition-colors',
                                 isDarkMode
@@ -1174,7 +1202,7 @@ const openFile = (url: string) => {
                                 decision.file_fix_url_annotated &&
                                 decision.file_fix_url_annotated.trim() !== ''
                               "
-                              @click.stop="openFile(decision.file_fix_url_annotated)"
+                              @click.stop="downloadFile(decision.file_fix_url_annotated)"
                               :class="[
                                 'inline-flex items-center px-3 py-1 rounded text-xs font-medium transition-colors',
                                 isDarkMode

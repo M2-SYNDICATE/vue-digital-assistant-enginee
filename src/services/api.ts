@@ -575,6 +575,24 @@ class ApiClient {
     })
   }
 
+  // 17. GET /download_path?file_path=... - Unified file download by path
+  async downloadByPath(filePath: string): Promise<Blob> {
+    const params = new URLSearchParams({ file_path: filePath })
+
+    const response = await this.request<Response>(`/download_path?${params.toString()}`, {
+      method: 'GET',
+    })
+
+    if (response instanceof Response) {
+      return await response.blob()
+    }
+
+    throw new ApiError({
+      message: 'Invalid response format for file download by path',
+      code: 'INVALID_RESPONSE',
+    })
+  }
+
   // Logout - Clear stored token
   logout(): void {
     TokenManager.removeToken()
@@ -607,6 +625,7 @@ export const api = {
   submitFixes: (docId: string, file: File, fixedIds: string[]) =>
     apiClient.submitFixes(docId, file, fixedIds),
   downloadFixedPdf: (docId: string, occId: string) => apiClient.downloadFixedPdf(docId, occId),
+  downloadByPath: (filePath: string) => apiClient.downloadByPath(filePath),
 
   // Analysis
   getProcessAnalysis: (startDate: string, endDate: string, includeSessions = true) =>

@@ -210,20 +210,53 @@ const getSeverityColor = (count: number) => {
   }
 }
 
+const downloadFile = async (filePath: string, suggestedName?: string) => {
+  if (!filePath) {
+    alert('Путь к файлу не указан')
+    return
+  }
+
+  try {
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    console.log('📥 Запрашиваю файл через API:', normalizedPath)
+
+    // ✅ используем единый API-запрос
+    const blob = await api.downloadByPath(normalizedPath)
+
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = suggestedName || normalizedPath.split('/').pop() || 'document.pdf'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('Ошибка при скачивании файла:', err)
+    alert(`Ошибка при скачивании файла: ${handleApiError(err)}`)
+  }
+}
+
+// 📄 Скачать аннотированный файл (с ошибками)
 const openAnnotatedFile = () => {
-  if (result.value?.annotated_file_url) openFile(result.value.annotated_file_url)
+  if (result.value?.annotated_file_url)
+    downloadFile(result.value.annotated_file_url, 'annotated.pdf')
 }
 
+// 📄 Скачать исходный файл
 const openOriginalFile = () => {
-  if (result.value?.original_file_url) openFile(result.value.original_file_url)
+  if (result.value?.original_file_url) downloadFile(result.value.original_file_url, 'original.pdf')
 }
 
+// 📄 Скачать итоговый файл
 const openFinalFile = () => {
-  if (result.value?.final_file_url) openFile(result.value.final_file_url)
+  if (result.value?.final_file_url) downloadFile(result.value.final_file_url, 'final.pdf')
 }
 
-// Открытие PDF
-const openPointPdf = async (pdfUrl: string, point: string) => {}
+// 📄 Скачать PDF конкретного пункта
+const openPointPdf = async (pdfUrl: string, point: string) => {
+  await downloadFile(pdfUrl, `error_point_${point}.pdf`)
+}
 
 // Управление историей решений
 const togglePointExpansion = (key: string | number) => {
