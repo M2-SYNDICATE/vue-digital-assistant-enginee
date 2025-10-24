@@ -13,17 +13,13 @@ import {
   User,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   FileText,
   Filter,
   SquarePen,
   FileScan,
 } from 'lucide-vue-next'
 
-const props = defineProps<{
-  id: string
-}>()
-
+const props = defineProps<{ id: string }>()
 const isDarkMode = inject('isDarkMode', ref(false))
 const route = useRoute()
 const router = useRouter()
@@ -35,16 +31,13 @@ const isProcessing = ref(false)
 
 // Состояния для управления историей решений
 const expandedPoints = ref<Set<string>>(new Set())
-const isUpdatingStatus = ref(false)
 
-// Добавляем фильтры
+// Фильтры
 const activeFilter = ref<'all' | 'pending' | 'fixed' | 'rejected'>('all')
-
 const resultId = computed(() => props.id || (route.params.id as string))
-
 const sortBy = ref<'point' | 'severity' | 'status'>('point')
 
-// Интерфейсы согласно новой структуре
+// Интерфейсы
 interface Decision {
   id: string
   error_point: string
@@ -72,21 +65,30 @@ interface ExtendedDetailedResult extends Omit<DetailedResult, 'error_points'> {
   decisions?: Decision[]
   processing_status?: string
   status?: string
-  status_author?: string
 
+  // Новые (универсальные) поля
   annotated_file_url?: string
   original_file_url?: string
   final_file_url?: string
 
+  // Старые поля, которые реально приходят с бэка
   file_url?: string
   file_url_annotated?: string
   final_approved_pdf?: string
 }
 
-// Computed свойства для фильтрации
+// Модалки для нормоконтроллера
+const showStatusModal = ref(false)
+const showCriterionModal = ref(false)
+const selectedCriterion = ref<ErrorPoint | null>(null)
+const selectedStatus = ref<'approved' | 'rejected' | 'removed'>('approved')
+const selectedCriterionStatus = ref<'fixed' | 'rejected'>('fixed')
+const criterionComment = ref('')
+const isUpdatingStatus = ref(false)
+
+// Computed свойства
 const filteredPoints = computed(() => {
   if (!result.value) return []
-
   switch (activeFilter.value) {
     case 'pending':
       return result.value.error_points.filter((p) => !getCurrentStatus(p.occ_id))
@@ -115,61 +117,8 @@ const rejectedPointsCount = computed(() => {
   )
 })
 
-const loadResult = async () => {
-  try {
-    console.log('Loading result with ID:', resultId.value)
-    const detailedResult = (await api.getResult(
-      resultId.value,
-    )) as unknown as ExtendedDetailedResult
-
-    // Проверяем именно processing_status
-    if (detailedResult && detailedResult.processing_status === 'processing') {
-      isProcessing.value = true
-
-      // 🔁 Функция опроса сервера
-      const pollForResult = async () => {
-        try {
-          const updatedResult = (await api.getResult(
-            resultId.value,
-          )) as unknown as ExtendedDetailedResult
-
-          // Проверяем снова processing_status
-          if (
-            updatedResult &&
-            updatedResult.processing_status !== 'processing' &&
-            updatedResult.processing_status !== 'queued'
-          ) {
-            result.value = updatedResult
-            isProcessing.value = false
-          } else {
-            // Повторяем опрос каждые 3 секунды
-            setTimeout(pollForResult, 3000)
-          }
-        } catch (err) {
-          console.error('Polling error:', err)
-          const errorMessage = handleApiError(err)
-          error.value = `Ошибка при проверке статуса: ${errorMessage}`
-          isProcessing.value = false
-        }
-      }
-
-      // Запускаем первый опрос
-      setTimeout(pollForResult, 3000)
-    } else {
-      result.value = detailedResult
-    }
-  } catch (err) {
-    console.error('Error loading result:', err)
-    const errorMessage = handleApiError(err)
-    error.value = `Ошибка при загрузке результата: ${errorMessage}`
-  } finally {
-    isLoading.value = false
-  }
-}
-
 const sortedAndFilteredPoints = computed(() => {
-  let points = filteredPoints.value.slice() // копия, чтобы не мутировать
-
+  let points = filteredPoints.value.slice()
   switch (sortBy.value) {
     case 'severity':
       points.sort(
@@ -189,26 +138,66 @@ const sortedAndFilteredPoints = computed(() => {
     default:
       points.sort((a, b) => a.point.localeCompare(b.point, 'ru', { numeric: true }))
   }
-
   return points
 })
 
-onMounted(async () => {
-  await loadResult()
-})
+// Загрузка данных
+const loadResult = async () => {
+  try {
+    console.log('Loading result with ID:', resultId.value)
+    const detailedResult = (await api.getResult(
+      resultId.value,
+    )) as unknown as ExtendedDetailedResult
 
-const goBack = () => {
-  router.back()
+    detailedResult.annotated_file_url =
+      detailedResult.annotated_file_url || detailedResult.file_url_annotated
+    detailedResult.original_file_url = detailedResult.original_file_url || detailedResult.file_url
+    detailedResult.final_file_url =
+      detailedResult.final_file_url || detailedResult.final_approved_pdf
+
+    if (detailedResult && detailedResult.processing_status === 'processing') {
+      isProcessing.value = true
+      const pollForResult = async () => {
+        try {
+          const updatedResult = (await api.getResult(
+            resultId.value,
+          )) as unknown as ExtendedDetailedResult
+          if (
+            updatedResult &&
+            updatedResult.processing_status !== 'processing' &&
+            updatedResult.processing_status !== 'queued'
+          ) {
+            result.value = updatedResult
+            isProcessing.value = false
+          } else {
+            setTimeout(pollForResult, 3000)
+          }
+        } catch (err) {
+          console.error('Polling error:', err)
+          const errorMessage = handleApiError(err)
+          error.value = `Ошибка при проверке статуса: ${errorMessage}`
+          isProcessing.value = false
+        }
+      }
+      setTimeout(pollForResult, 3000)
+    } else {
+      result.value = detailedResult
+    }
+  } catch (err) {
+    console.error('Error loading result:', err)
+    const errorMessage = handleApiError(err)
+    error.value = `Ошибка при загрузке результата: ${errorMessage}`
+  } finally {
+    isLoading.value = false
+  }
 }
 
-const goToHistory = () => {
-  router.push('/history')
-}
+// Навигация
+const goBack = () => router.back()
+const goToHistory = () => router.push('/history/norm-controller')
+const goToHome = () => router.push('/')
 
-const goToHome = () => {
-  router.push('/')
-}
-
+// Стили
 const getSeverityColor = (count: number) => {
   if (isDarkMode.value) {
     if (count <= 3) return 'text-yellow-400'
@@ -222,54 +211,45 @@ const getSeverityColor = (count: number) => {
 }
 
 const openAnnotatedFile = () => {
-  if (result.value?.file_url_annotated) {
-    console.log('📄 annotated_file_url:', result.value.file_url_annotated)
-    openFile(result.value.file_url_annotated)
-  } else {
-    console.warn('❌ Нет file_url_annotated в result')
-  }
+  if (result.value?.annotated_file_url) openFile(result.value.annotated_file_url)
 }
 
 const openOriginalFile = () => {
-  if (result.value?.file_url) {
-    console.log('📄 original_file_url:', result.value.file_url)
-    openFile(result.value.file_url)
-  } else {
-    console.warn('❌ Нет file_url в result')
-  }
+  if (result.value?.original_file_url) openFile(result.value.original_file_url)
 }
 
 const openFinalFile = () => {
-  const finalUrl = result.value?.final_file_url || result.value?.final_approved_pdf
-
-  if (finalUrl && finalUrl.trim() !== '') {
-    console.log('📘 Итоговый файл:', finalUrl)
-    openFile(finalUrl)
-  } else {
-    console.warn('❌ Итоговый файл отсутствует')
-  }
+  if (result.value?.final_file_url) openFile(result.value.final_file_url)
 }
-// Скачивание PDF для конкретного пункта
+
+// Открытие PDF
 const openPointPdf = async (pdfUrl: string, point: string) => {}
 
+// Управление историей решений
+const togglePointExpansion = (key: string | number) => {
+  if (expandedPoints.value.has(key.toString())) {
+    expandedPoints.value.delete(key.toString())
+  } else {
+    expandedPoints.value.add(key.toString())
+  }
+}
+
+const isPointExpanded = (key: string | number) => expandedPoints.value.has(key.toString())
+
+// Группировка решений по версиям
 const groupDecisionsByVersion = (decisions: Decision[]) => {
   const grouped: Record<number, Decision[]> = {}
-
   for (const d of decisions) {
     const versionId = Number(d.version_number) || 0
     if (!grouped[versionId]) grouped[versionId] = []
     grouped[versionId].push(d)
   }
-
-  // Возвращаем массив, отсортированный по убыванию
   return Object.entries(grouped)
     .sort((a, b) => Number(b[0]) - Number(a[0]))
-    .map(([versionId, items]) => ({
-      versionId: Number(versionId),
-      items,
-    }))
+    .map(([versionId, items]) => ({ versionId: Number(versionId), items }))
 }
 
+// Форматирование даты
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('ru-RU', {
     year: 'numeric',
@@ -280,20 +260,7 @@ const formatDate = (dateString: string) => {
   })
 }
 
-// Функции для управления историей решений
-const togglePointExpansion = (key: string | number) => {
-  if (expandedPoints.value.has(key.toString())) {
-    expandedPoints.value.delete(key.toString())
-  } else {
-    expandedPoints.value.add(key.toString())
-  }
-}
-
-const isPointExpanded = (key: string | number) => {
-  return expandedPoints.value.has(key.toString())
-}
-
-// Получение статуса для отображения (для пунктов)
+// Статусы
 const getPointStatusInfo = (status: string) => {
   const statusMap = {
     fixed: {
@@ -322,33 +289,6 @@ const getPointStatusInfo = (status: string) => {
   )
 }
 
-const getEmptyFilterMessage = () => {
-  switch (activeFilter.value) {
-    case 'pending':
-      return 'Нет пунктов на рассмотрении'
-    case 'fixed':
-      return 'Нет исправленных пунктов'
-    case 'rejected':
-      return 'Нет отклоненных пунктов'
-    default:
-      return 'Нет пунктов для отображения'
-  }
-}
-
-const getEmptyFilterSubMessage = () => {
-  switch (activeFilter.value) {
-    case 'pending':
-      return 'Все пункты имеют решения'
-    case 'fixed':
-      return 'Исправленные пункты не найдены'
-    case 'rejected':
-      return 'Отклоненные пункты не найдены'
-    default:
-      return 'Попробуйте выбрать другой фильтр'
-  }
-}
-
-// Получение статуса для отображения (для документа)
 const getDocumentStatusInfo = (status: string) => {
   const statusMap = {
     waiting: {
@@ -391,7 +331,7 @@ const getDocumentStatusInfo = (status: string) => {
   )
 }
 
-// Получение информации о роли
+// Роли
 const getRoleInfo = (role: string) => {
   const roles = {
     developer: {
@@ -406,7 +346,7 @@ const getRoleInfo = (role: string) => {
   return roles[role as keyof typeof roles] || { label: role, color: 'text-gray-500' }
 }
 
-// Получение решений для конкретного пункта
+// Работа с решениями
 const getDecisionsForOcc = (occId: string) => {
   if (!result.value?.decisions) return []
   return result.value.decisions
@@ -414,119 +354,86 @@ const getDecisionsForOcc = (occId: string) => {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 }
 
-// Получение текущего статуса для пункта
 const getCurrentStatus = (occId: string) => {
   if (!result.value?.decisions) return null
   const occDecisions = result.value.decisions
     .filter((d) => d.occ_id === occId)
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-
   if (occDecisions.length === 0) return null
-
-  // Берём последнее по времени решение
   return occDecisions[0]?.status || null
 }
 
-// Проверка, есть ли нерешенные пункты
-const hasUnresolvedPoints = computed(() => {
-  if (!result.value) return false
-  return result.value.error_points.some((pointObj) => !getCurrentStatus(pointObj.occ_id))
-})
+const statusComment = ref('')
 
-// Проверка, можно ли обновлять статусы (только для завершенных документов без финального статуса)
-const canUpdateStatuses = computed(() => {
-  if (!result.value) return false
-  return (
-    result.value.status === 'completed' &&
-    !['approved', 'rejected', 'removed'].includes(result.value.status) &&
-    hasUnresolvedPoints.value
-  )
-})
-
-// Получение описания нарушения из объекта ErrorPoint
-const getErrorDescription = (errorPoint: string) => {
-  if (!result.value) return ''
-  const pointObj = result.value.error_points.find((p) => p.point === errorPoint)
-  return pointObj?.description || `Нарушение в пункте ${errorPoint}`
+// Модалки для нормоконтроллера
+const openStatusModal = () => {
+  showStatusModal.value = true
+  selectedStatus.value = 'approved'
+  statusComment.value = ''
 }
 
-// Получение PDF URL для пункта
-const getPdfUrl = (errorPoint: string) => {
-  if (!result.value) return ''
-  const pointObj = result.value.error_points.find((p) => p.point === errorPoint)
-  return pointObj?.pdf_url || ''
+const closeStatusModal = () => {
+  showStatusModal.value = false
 }
 
-// === МОДАЛКА "Внести изменения" ===
-const showFixModal = ref(false)
-const selectedFile = ref<File | null>(null)
-const selectedFixedPoints = ref<string[]>([])
-const isSubmittingFixes = ref(false)
-
-// Открытие и закрытие модалки
-const openFixModal = () => {
-  showFixModal.value = true
-}
-const closeFixModal = () => {
-  showFixModal.value = false
-  selectedFile.value = null
-  selectedFixedPoints.value = []
+const openCriterionModal = (criterion: ErrorPoint) => {
+  selectedCriterion.value = criterion
+  selectedCriterionStatus.value = 'fixed'
+  criterionComment.value = ''
+  showCriterionModal.value = true
 }
 
-// Обработчик выбора файла
-const handleFileUpload = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0] // ✅ безопасный доступ
-
-  if (file) {
-    selectedFile.value = file
-  } else {
-    selectedFile.value = null // 👈 если пользователь ничего не выбрал
-  }
+const closeCriterionModal = () => {
+  showCriterionModal.value = false
+  selectedCriterion.value = null
 }
 
-const downloadFixedPdf = async (occId: string) => {
-  try {
-    const blob = await api.downloadFixedPdf(resultId.value, occId)
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `fixed_${occId}.pdf`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-  } catch (error) {
-    console.error('Ошибка скачивания исправленного PDF:', error)
-    alert(`Ошибка при скачивании исправленного файла: ${handleApiError(error)}`)
-  }
-}
-
-// Отправка данных на сервер
-const submitFixes = async () => {
-  if (!selectedFile.value) {
-    alert('Пожалуйста, выберите PDF-файл.')
-    return
-  }
-
-  if (selectedFixedPoints.value.length === 0) {
-    alert('Выберите хотя бы один исправленный пункт.')
-    return
-  }
+// API вызовы для нормоконтроллера
+const updateDocumentStatus = async () => {
+  if (!result.value) return
 
   try {
-    isSubmittingFixes.value = true
-    const points = selectedFixedPoints.value
-    await api.submitFixes(resultId.value, selectedFile.value, points)
-    alert('Изменения успешно отправлены!')
-    closeFixModal()
-    await loadResult() // перезагружаем результат
+    isUpdatingStatus.value = true
+    await api.updateDocumentStatus(resultId.value, {
+      status: selectedStatus.value,
+    })
+
+    await loadResult()
+    alert('Статус документа успешно обновлен')
+    closeStatusModal()
   } catch (err) {
-    console.error('Ошибка при отправке изменений:', err)
+    console.error('Error updating document status:', err)
     const errorMessage = handleApiError(err)
-    alert(`Ошибка при отправке: ${errorMessage}`)
+    alert(`Ошибка при обновлении статуса: ${errorMessage}`)
   } finally {
-    isSubmittingFixes.value = false
+    isUpdatingStatus.value = false
+  }
+}
+
+const updateCriterionStatus = async () => {
+  if (!selectedCriterion.value) return
+
+  try {
+    isUpdatingStatus.value = true
+
+    // Отправляем данные по новой спецификации API
+    await api.updateCriterionStatus(resultId.value, {
+      occ_id: selectedCriterion.value.occ_id,
+      error_point: selectedCriterion.value.point,
+      status: selectedCriterionStatus.value,
+      comment: criterionComment.value || undefined,
+    })
+
+    // Обновляем локальное состояние
+    await loadResult()
+    alert('Статус пункта успешно обновлен')
+    closeCriterionModal()
+  } catch (err) {
+    console.error('Error updating criterion status:', err)
+    const errorMessage = handleApiError(err)
+    alert(`Ошибка при обновлении статуса пункта: ${errorMessage}`)
+  } finally {
+    isUpdatingStatus.value = false
   }
 }
 
@@ -538,16 +445,14 @@ const resolveFileUrl = (url: string): string => {
   return `${baseUrl}${normalized.startsWith('/') ? '' : '/'}${normalized}`
 }
 
-// 🔗 Открывает файл в новой вкладке
 const openFile = (url: string) => {
-  if (!url) {
-    console.warn('❌ openFile: пустой URL')
-    return
-  }
   const fullUrl = resolveFileUrl(url)
-  console.log('🧭 Открываю файл:', fullUrl)
   window.open(fullUrl, '_blank')
 }
+
+onMounted(async () => {
+  await loadResult()
+})
 </script>
 
 <template>
@@ -572,7 +477,6 @@ const openFile = (url: string) => {
           </svg>
           Назад
         </button>
-
         <button
           @click="goToHistory"
           :class="[
@@ -630,20 +534,6 @@ const openFile = (url: string) => {
             <History class="w-4 h-4 mr-2" />
             Все проверки
           </button>
-          <button
-            @click="goToHome"
-            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
-            Новая проверка
-          </button>
         </div>
       </div>
     </div>
@@ -689,13 +579,6 @@ const openFile = (url: string) => {
                 {{ getDocumentStatusInfo(result.status ?? 'waiting').label }}
               </span>
             </div>
-
-            <p
-              v-if="result.status_author"
-              :class="['mt-1 text-sm italic', isDarkMode ? 'text-gray-400' : 'text-gray-500']"
-            >
-              Автор статуса: {{ result.status_author }}
-            </p>
           </div>
         </div>
 
@@ -729,16 +612,14 @@ const openFile = (url: string) => {
                 {{
                   result.error_points.filter((p) => getCurrentStatus(p.occ_id) === 'fixed').length
                 }}
-
-                /
-                {{ result.error_points.length }}
+                / {{ result.error_points.length }}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Action Buttons -->
+      <!-- Action Buttons для нормоконтроллера -->
       <div class="flex flex-wrap gap-4">
         <!-- Открыть файл с ошибками -->
         <button
@@ -754,7 +635,7 @@ const openFile = (url: string) => {
           Файл с ошибками
         </button>
 
-        <!-- Открыть исходный файл -->
+        <!-- Исходный файл -->
         <button
           @click="openOriginalFile"
           :class="[
@@ -768,7 +649,7 @@ const openFile = (url: string) => {
           Исходный файл
         </button>
 
-        <!-- Итоговый файл доступен только при статусе "согласовано" или "снято" -->
+        <!-- Итоговый файл -->
         <button
           v-if="['approved', 'removed'].includes(result.status ?? '')"
           @click="openFinalFile"
@@ -783,10 +664,9 @@ const openFile = (url: string) => {
           Итоговый файл
         </button>
 
-        <!-- Иначе — обычная кнопка "Внести изменения" -->
+        <!-- Изменить статус документа -->
         <button
-          v-else-if="result.status !== 'approved' && result.status !== 'removed'"
-          @click="openFixModal"
+          @click="openStatusModal"
           :class="[
             'inline-flex items-center px-4 py-2.5 rounded-lg font-medium transition-colors min-h-[44px]',
             isDarkMode
@@ -795,7 +675,7 @@ const openFile = (url: string) => {
           ]"
         >
           <SquarePen class="w-4 h-4 mr-2" />
-          Внести изменения
+          Изменить статус документа
         </button>
       </div>
 
@@ -849,23 +729,6 @@ const openFile = (url: string) => {
           </div>
         </div>
 
-        <!-- Сортировка -->
-        <div
-          class="mb-4 flex items-center space-x-3"
-          :class="isDarkMode ? 'text-gray-300' : 'text-gray-700'"
-        >
-          <FileText class="w-4 h-4" />
-          <label class="text-sm font-medium">Сортировка:</label>
-          <select
-            v-model="sortBy"
-            class="rounded-lg px-3 py-1.5 text-sm border"
-            :class="isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'"
-          >
-            <option value="point">По пункту</option>
-            <option value="severity">По тяжести нарушения</option>
-          </select>
-        </div>
-
         <!-- Сообщения для разных случаев -->
         <div v-if="filteredPoints.length === 0" class="text-center py-8">
           <CheckCircle
@@ -876,22 +739,12 @@ const openFile = (url: string) => {
             v-else
             :class="['w-12 h-12 mx-auto mb-4', isDarkMode ? 'text-gray-400' : 'text-gray-600']"
           />
-
           <p :class="['text-lg', isDarkMode ? 'text-gray-300' : 'text-gray-600']">
-            <span v-if="result.error_points.length === 0"> Нарушений не обнаружено </span>
-            <span v-else>
-              {{ getEmptyFilterMessage() }}
-            </span>
-          </p>
-          <p :class="['text-sm mt-2', isDarkMode ? 'text-gray-500' : 'text-gray-500']">
-            <span v-if="result.error_points.length === 0">
-              Документ соответствует всем требованиям
-            </span>
-            <span v-else>
-              {{ getEmptyFilterSubMessage() }}
-            </span>
+            <span v-if="result.error_points.length === 0">Нарушений не обнаружено</span>
+            <span v-else>Нет пунктов для отображения</span>
           </p>
         </div>
+
         <div v-else class="space-y-3">
           <div
             v-for="(errorPointObj, index) in sortedAndFilteredPoints"
@@ -918,7 +771,6 @@ const openFile = (url: string) => {
                       <h3 :class="['font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
                         Пункт {{ errorPointObj.point }}
                       </h3>
-
                       <!-- Текущий статус пункта -->
                       <span
                         v-if="getCurrentStatus(errorPointObj.occ_id)"
@@ -932,13 +784,8 @@ const openFile = (url: string) => {
                         {{ getPointStatusInfo(getCurrentStatus(errorPointObj.occ_id)!).icon }}
                         {{ getPointStatusInfo(getCurrentStatus(errorPointObj.occ_id)!).label }}
                       </span>
-
                       <span
-                        v-else-if="
-                          !['fixed', 'rejected'].includes(
-                            getCurrentStatus(errorPointObj.occ_id) || '',
-                          )
-                        "
+                        v-else
                         :class="[
                           'px-2 py-1 rounded-full text-xs font-medium border',
                           isDarkMode
@@ -949,11 +796,9 @@ const openFile = (url: string) => {
                         🟡 Требует решения
                       </span>
                     </div>
-
                     <p :class="['mt-1 text-sm', isDarkMode ? 'text-gray-300' : 'text-gray-600']">
                       {{ errorPointObj.description }}
                     </p>
-
                     <div class="flex items-center space-x-4 mt-2">
                       <!-- Кнопка скачивания PDF -->
                       <button
@@ -969,10 +814,22 @@ const openFile = (url: string) => {
                         <FileScan class="w-3 h-3 mr-1" />
                         PDF с ошибкой
                       </button>
+                      <!-- Кнопка изменения статуса пункта -->
+                      <button
+                        @click.stop="openCriterionModal(errorPointObj)"
+                        :class="[
+                          'inline-flex items-center px-3 py-1 rounded text-xs font-medium transition-colors',
+                          isDarkMode
+                            ? 'bg-purple-600 text-white hover:bg-purple-700'
+                            : 'bg-purple-600 text-white hover:bg-purple-700',
+                        ]"
+                      >
+                        <SquarePen class="w-3 h-3 mr-1" />
+                        Изменить статус пункта
+                      </button>
                     </div>
                   </div>
                 </div>
-
                 <ChevronDown
                   v-if="!isPointExpanded(errorPointObj.occ_id)"
                   :class="[
@@ -1003,9 +860,8 @@ const openFile = (url: string) => {
                     isDarkMode ? 'text-gray-300' : 'text-gray-700',
                   ]"
                 >
-                  История решений по конкретной ошибке:
+                  История решений:
                 </h4>
-
                 <div
                   v-if="getDecisionsForOcc(errorPointObj.occ_id).length === 0"
                   :class="[
@@ -1060,7 +916,6 @@ const openFile = (url: string) => {
                           }}
                         </span>
                       </div>
-
                       <ChevronDown
                         v-if="!isPointExpanded(`version_${errorPointObj.occ_id}_${versionId}`)"
                         class="w-4 h-4"
@@ -1079,7 +934,6 @@ const openFile = (url: string) => {
                         v-if="isPointExpanded(`version_${errorPointObj.occ_id}_${versionId}`)"
                         class="p-4 space-y-3"
                       >
-                        <!-- Список решений -->
                         <div
                           v-for="decision in items"
                           :key="decision.id"
@@ -1116,7 +970,6 @@ const openFile = (url: string) => {
                               }}
                             </span>
                           </div>
-
                           <div class="text-sm mb-2">
                             <div class="flex items-center space-x-2">
                               <User
@@ -1140,7 +993,6 @@ const openFile = (url: string) => {
                                 </span>
                               </span>
                             </div>
-
                             <p
                               class="mt-2 p-2 rounded border text-sm"
                               :class="
@@ -1152,8 +1004,7 @@ const openFile = (url: string) => {
                               {{ decision.comment }}
                             </p>
                           </div>
-
-                          <!-- 🔽 Добавляем кнопки сразу под комментарием -->
+                          <!-- Файлы -->
                           <div class="flex flex-wrap gap-2 mt-2">
                             <button
                               v-if="decision.file_fix_url && decision.file_fix_url.trim() !== ''"
@@ -1168,7 +1019,6 @@ const openFile = (url: string) => {
                               <FileScan class="w-3 h-3 mr-1" />
                               Загруженный файл
                             </button>
-
                             <button
                               v-if="
                                 decision.file_fix_url_annotated &&
@@ -1253,20 +1103,6 @@ const openFile = (url: string) => {
             <History class="w-4 h-4 mr-2" />
             Все проверки
           </button>
-          <button
-            @click="goToHome"
-            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-          >
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z"
-              />
-            </svg>
-            Новая проверка
-          </button>
         </div>
       </div>
     </div>
@@ -1294,93 +1130,48 @@ const openFile = (url: string) => {
         </span>
       </div>
     </div>
-    <!-- Модальное окно: Внести изменения -->
+
+    <!-- Модальное окно: Изменить статус документа -->
     <div
-      v-if="showFixModal"
+      v-if="showStatusModal"
       class="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50"
     >
       <div
         :class="[
-          'w-full max-w-lg p-6 rounded-xl border shadow-lg',
+          'w-full max-w-md p-6 rounded-xl border shadow-lg',
           isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
         ]"
       >
         <h3 :class="['text-xl font-bold mb-4', isDarkMode ? 'text-white' : 'text-gray-900']">
-          Внести изменения
+          Изменить статус документа
         </h3>
-
         <div class="space-y-4">
-          <!-- Загрузка файла -->
-          <div>
-            <label :class="['font-medium', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
-              >Загрузите исправленный PDF:</label
-            >
-            <input
-              type="file"
-              accept="application/pdf"
-              @change="handleFileUpload"
-              class="mt-2 block w-full text-sm border rounded-lg p-2"
-              :class="
-                isDarkMode
-                  ? 'bg-gray-700 border-gray-600 text-gray-200'
-                  : 'bg-gray-50 border-gray-300 text-gray-900'
-              "
-            />
-          </div>
-
-          <!-- Выбор пунктов -->
+          <!-- Выбор статуса -->
           <div>
             <label
-              :class="['font-medium mb-2 block', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
-              >Выберите исправленные пункты:</label
+              :class="['font-medium block mb-2', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
             >
-            <div
-              class="max-h-48 overflow-y-auto border rounded-lg p-3 space-y-2"
-              :class="isDarkMode ? 'border-gray-700' : 'border-gray-200'"
+              Статус:
+            </label>
+            <select
+              v-model="selectedStatus"
+              class="w-full rounded-lg px-3 py-2 border"
+              :class="
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              "
             >
-              <div
-                v-for="(pointObj, index) in result?.error_points || []"
-                :key="`${pointObj.point}_${index}`"
-                class="flex items-center space-x-2"
-              >
-                <input
-                  type="checkbox"
-                  :id="'point-' + pointObj.point + '-' + index"
-                  :value="pointObj.occ_id"
-                  v-model="selectedFixedPoints"
-                  :disabled="getCurrentStatus(pointObj.occ_id) === 'fixed'"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                />
-                <label
-                  :for="'point-' + pointObj.point + '-' + index"
-                  :class="[
-                    'cursor-pointer',
-                    getCurrentStatus(pointObj.occ_id) === 'fixed'
-                      ? isDarkMode
-                        ? 'text-gray-500 line-through'
-                        : 'text-gray-400 line-through'
-                      : isDarkMode
-                        ? 'text-gray-300'
-                        : 'text-gray-700',
-                  ]"
-                >
-                  Пункт {{ pointObj.point }} — {{ pointObj.description }}
-                  <span
-                    v-if="getCurrentStatus(pointObj.occ_id) === 'fixed'"
-                    class="ml-1 text-xs italic"
-                  >
-                    (уже исправлен)
-                  </span>
-                </label>
-              </div>
-            </div>
+              <option value="approved">Согласовано</option>
+              <option value="rejected">Отклонено</option>
+              <option value="removed">Снято</option>
+            </select>
           </div>
         </div>
-
         <!-- Кнопки -->
         <div class="flex justify-end space-x-4 mt-6">
           <button
-            @click="closeFixModal"
+            @click="closeStatusModal"
             :class="[
               'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
               isDarkMode
@@ -1391,19 +1182,103 @@ const openFile = (url: string) => {
             Отмена
           </button>
           <button
-            @click="submitFixes"
-            :disabled="isSubmittingFixes"
+            @click="updateDocumentStatus"
+            :disabled="isUpdatingStatus"
             :class="[
-              'px-4 py-2 rounded-lg text-sm font-medium flex items-center',
-              isSubmittingFixes
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isUpdatingStatus
                 ? 'bg-gray-400 cursor-not-allowed'
                 : isDarkMode
                   ? 'bg-blue-600 text-white hover:bg-blue-700'
                   : 'bg-blue-600 text-white hover:bg-blue-700',
             ]"
           >
-            <RefreshCw v-if="isSubmittingFixes" class="w-4 h-4 mr-2 animate-spin" />
-            {{ isSubmittingFixes ? 'Отправка...' : 'Отправить изменения' }}
+            {{ isUpdatingStatus ? 'Обновление...' : 'Обновить статус' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно: Изменить статус пункта -->
+    <div
+      v-if="showCriterionModal"
+      class="fixed inset-0 bg-black/40 backdrop-blur-md flex items-center justify-center z-50"
+    >
+      <div
+        :class="[
+          'w-full max-w-md p-6 rounded-xl border shadow-lg',
+          isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+        ]"
+      >
+        <h3 :class="['text-xl font-bold mb-4', isDarkMode ? 'text-white' : 'text-gray-900']">
+          Изменить статус пункта {{ selectedCriterion?.point }}
+        </h3>
+        <div class="space-y-4">
+          <!-- Выбор статуса -->
+          <div>
+            <label
+              :class="['font-medium block mb-2', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
+            >
+              Статус:
+            </label>
+            <select
+              v-model="selectedCriterionStatus"
+              class="w-full rounded-lg px-3 py-2 border"
+              :class="
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              "
+            >
+              <option value="fixed">Исправлено</option>
+              <option value="rejected">Отклонено</option>
+            </select>
+          </div>
+          <!-- Комментарий -->
+          <div>
+            <label
+              :class="['font-medium block mb-2', isDarkMode ? 'text-gray-200' : 'text-gray-700']"
+            >
+              Комментарий (необязательно):
+            </label>
+            <textarea
+              v-model="criterionComment"
+              rows="3"
+              class="w-full rounded-lg px-3 py-2 border"
+              :class="
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+              "
+            ></textarea>
+          </div>
+        </div>
+        <!-- Кнопки -->
+        <div class="flex justify-end space-x-4 mt-6">
+          <button
+            @click="closeCriterionModal"
+            :class="[
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isDarkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+            ]"
+          >
+            Отмена
+          </button>
+          <button
+            @click="updateCriterionStatus"
+            :disabled="isUpdatingStatus"
+            :class="[
+              'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              isUpdatingStatus
+                ? 'bg-gray-400 cursor-not-allowed'
+                : isDarkMode
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-blue-600 text-white hover:bg-blue-700',
+            ]"
+          >
+            {{ isUpdatingStatus ? 'Обновление...' : 'Обновить статус' }}
           </button>
         </div>
       </div>
@@ -1416,7 +1291,6 @@ const openFile = (url: string) => {
 .fade-leave-active {
   transition: opacity 0.2s ease;
 }
-
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

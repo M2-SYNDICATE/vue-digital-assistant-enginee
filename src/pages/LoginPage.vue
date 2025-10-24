@@ -46,12 +46,10 @@ const validateLogin = (login: string) => {
 
 // Handle form submission with POST request to /login
 const handleSubmit = async () => {
-  // Clear previous errors
   errors.login = ''
   errors.password = ''
   errors.general = ''
 
-  // Client-side validation
   let hasErrors = false
 
   if (!form.login.trim()) {
@@ -75,19 +73,24 @@ const handleSubmit = async () => {
   isLoading.value = true
 
   try {
-    // Send POST request to /login with JSON body { "login": "string", "password": "string" }
     const response = await api.login(form.login.trim(), form.password)
 
-    // JWT token is automatically stored by the API service
-    // Store user data in auth store
-    authStore.login(response.user)
+    const userData = {
+      id: form.login,
+      name: form.login,
+      email: '',
+      full_name: response.full_name,
+      role: response.role,
+    }
 
-    // Redirect to main application
-    router.push('/')
+    authStore.login(userData)
+    if (response.role === 'norm_controller') {
+      router.push('/history/norm-controller')
+    } else {
+      router.push('/')
+    }
   } catch (error) {
     console.error('Login error:', error)
-
-    // Handle different types of API errors
     const errorMessage = handleApiError(error)
 
     if (errorMessage.includes('401') || errorMessage.includes('Authentication failed')) {

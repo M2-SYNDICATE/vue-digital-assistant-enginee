@@ -1,6 +1,32 @@
 <template>
   <div class="min-h-screen" :class="isDarkMode ? 'bg-gray-900' : 'bg-gray-50'">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <!-- Back Button -->
+      <button
+        @click="goBack"
+        :class="[
+          'inline-flex items-center mb-3 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+          isDarkMode
+            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300',
+        ]"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-4 h-4 mr-2"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M15 19l-7-7 7-7"
+          />
+        </svg>
+        Назад
+      </button>
       <!-- Header -->
       <div class="mb-8">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -16,6 +42,15 @@
             <p :class="['text-sm mt-1 sm:mt-2', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
               Статистика длительности выполнения процессов и итераций между разработчиком и
               нормоконтролером
+            </p>
+            <p
+              v-if="authorFullName"
+              :class="[
+                'text-base sm:text-lg font-medium mt-2',
+                isDarkMode ? 'text-blue-400' : 'text-blue-600',
+              ]"
+            >
+              Разработчик: {{ authorFullName }}
             </p>
           </div>
           <button
@@ -876,6 +911,7 @@ interface ProcessDocument {
   review_duration_hours: number
   iterations: number
   sessions: ProcessSession[]
+  developer_full_name?: string
 }
 
 interface ProcessAnalysisData {
@@ -895,22 +931,18 @@ interface ProcessAnalysisData {
   min_review_duration_minutes: number
   max_fix_duration_hours: number
   min_fix_duration_hours: number
-
   max_review_duration_hours: number
   min_review_duration_hours: number
-
   average_iterations: number
   max_iterations: number
   min_iterations: number
   total_documents: number
   documents: ProcessDocument[]
-
   iterations_timeline?: {
     timestamp: string
     iterations_count: number
   }[]
 }
-
 // Data
 const analysisData = ref<ProcessAnalysisData | null>(null)
 const isLoading = ref(false)
@@ -1104,6 +1136,28 @@ const iterationTimelineOptions = computed(() => ({
   colors: ['#3b82f6'],
 }))
 
+const getTopDocuments = (count: number) => {
+  if (!analysisData.value) return []
+  return analysisData.value.documents
+    .slice()
+    .sort((a, b) => {
+      const totalA = getDocumentFixDuration(a) + getDocumentReviewDuration(a)
+      const totalB = getDocumentFixDuration(b) + getDocumentReviewDuration(b)
+      return totalB - totalA
+    })
+    .slice(0, count)
+}
+
+const goBack = () => {
+  // Если есть предыдущая страница в истории — вернуться назад
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    // fallback — на главную или процесс-анализ
+    router.push('/process-analysis')
+  }
+}
+
 // Computed properties for different time units
 const getAverageFixDuration = computed(() => {
   if (!analysisData.value) return 0
@@ -1173,28 +1227,6 @@ const getDocumentsWithMultipleIterations = computed(() => {
   return analysisData.value.documents.filter((doc) => doc.iterations > 1).length
 })
 
-// New computed properties for charts
-const iterationDistribution = computed(() => {
-  if (!analysisData.value) return {}
-
-  const distribution: { [key: number]: number } = {}
-  analysisData.value.documents.forEach((doc) => {
-    distribution[doc.iterations] = (distribution[doc.iterations] || 0) + 1
-  })
-
-  // Ensure we have entries for 0, 1, 2, 3+ iterations
-  const result: { [key: string]: number } = {}
-  for (let i = 0; i <= Math.max(3, ...Object.keys(distribution).map(Number)); i++) {
-    if (i >= 3) {
-      result['3+'] = (result['3+'] || 0) + (distribution[i] || 0)
-    } else {
-      result[i.toString()] = distribution[i] || 0
-    }
-  }
-
-  return result
-})
-
 // Methods
 const getDocumentFixDuration = (doc: ProcessDocument): number => {
   if (timeUnit.value === 'days') return doc.fix_duration
@@ -1224,6 +1256,9 @@ const getShortFileName = (filename: string) => {
   if (filename.length <= 20) return filename
   return filename.substring(0, 17) + '...'
 }
+const authorFullName = computed(() => {
+  return analysisData.value?.documents?.[0]?.developer_full_name || ''
+})
 
 const toggleDocumentExpansion = (docId: string) => {
   if (!analysisData.value) return
@@ -1429,13 +1464,6 @@ const goToHistory = () => {
   router.push('/history')
 }
 
-/*************  ✨ Windsurf Command ⭐  *************/
-/**
- * Redirects to the result page for a given document ID.
- *
- * @param {string} docId - The ID of the document to view the result for.
- */
-/*******  35b33c85-6328-42f8-8ae1-a0740a77a38b  *******/
 const goToResult = (docId: string) => {
   if (!docId) return
   router.push(`/result/${docId}`)

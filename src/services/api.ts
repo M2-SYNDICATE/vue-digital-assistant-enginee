@@ -16,6 +16,22 @@ export interface LoginResponse {
   }
 }
 
+export interface StatusUpdateRequest {
+  status: 'approved' | 'rejected' | 'removed'
+}
+
+export interface CriterionStatusUpdateRequest {
+  occ_id: string
+  error_point: string
+  status: 'fixed' | 'rejected'
+  comment?: string
+}
+
+export interface StatusUpdateResponse {
+  message: string
+  new_status: string
+}
+
 export interface UploadResponse {
   doc_id: string
   filename: string
@@ -39,13 +55,15 @@ export interface ErrorCounts {
 
 export interface HistoryItem {
   id: number
-  doc_id: number
   filename: string
   upload_date: string
-  error_points: string[]
-  error_counts: ErrorCounts
   total_violations: number
-  status: 'processing' | 'completed' | 'error'
+  error_counts: Record<string, number>
+  status: 'approved' | 'rejected' | 'removed' | 'waiting' | 'processing' | 'completed'
+  processing_status?: 'in_progress' | 'complete' | 'queued' | 'error'
+  status_author?: string
+  developer_login?: string
+  developer_full_name?: string
 }
 
 export interface DetailedResult {
@@ -56,6 +74,106 @@ export interface DetailedResult {
   error_counts: ErrorCounts
   total_violations: number
   full_report: string
+}
+
+export interface ProcessSession {
+  prev_version_id: number
+  curr_version_id: number
+  detect_at: string
+  fixed_at: string
+  review_at: string
+  fix_duration: number
+  review_duration: number
+  fix_duration_minutes: number
+  review_duration_minutes: number
+  fix_duration_hours: number
+  review_duration_hours: number
+  error_point: string
+  occ_id: string
+  outcome: 'fixed' | 'rejected' | 'approved' | string
+}
+
+export interface ProcessDocument {
+  doc_id: string
+  filename: string
+  upload_date: string
+  fix_duration: number
+  review_duration: number
+  fix_duration_minutes: number
+  review_duration_minutes: number
+  fix_duration_hours: number
+  review_duration_hours: number
+  iterations: number
+  sessions: ProcessSession[]
+}
+
+export interface ProcessAnalysisData {
+  average_fix_duration: number
+  average_review_duration: number
+  max_fix_duration: number
+  min_fix_duration: number
+  max_review_duration: number
+  min_review_duration: number
+  average_fix_duration_minutes: number
+  average_review_duration_minutes: number
+  average_fix_duration_hours: number
+  average_review_duration_hours: number
+  max_fix_duration_minutes: number
+  min_fix_duration_minutes: number
+  max_review_duration_minutes: number
+  min_review_duration_minutes: number
+  max_fix_duration_hours: number
+  min_fix_duration_hours: number
+  max_review_duration_hours: number
+  min_review_duration_hours: number
+  average_iterations: number
+  max_iterations: number
+  min_iterations: number
+  total_documents: number
+  documents: ProcessDocument[]
+}
+
+// Admin Types
+export interface User {
+  id: string
+  login: string
+  full_name: string
+  role: 'developer' | 'norm_controller' | 'admin'
+  created_at?: string
+  is_active?: boolean
+}
+
+export interface CreateUserRequest {
+  login: string
+  password: string
+  role: 'developer' | 'norm_controller' | 'admin'
+  full_name: string
+}
+
+export interface CreateUserResponse {
+  message: string
+  user_id: string
+}
+
+export interface WorkTimeSchedule {
+  monday?: { start: string; end: string } | null
+  tuesday?: { start: string; end: string } | null
+  wednesday?: { start: string; end: string } | null
+  thursday?: { start: string; end: string } | null
+  friday?: { start: string; end: string } | null
+  saturday?: { start: string; end: string } | null
+  sunday?: { start: string; end: string } | null
+}
+
+export interface WorkTimeSettingsRequest {
+  holidays: string // comma-separated dates in YYYY-MM-DD format
+  schedule: WorkTimeSchedule
+}
+
+export interface WorkTimeSettingsResponse {
+  message: string
+  holidays: string[]
+  schedule: WorkTimeSchedule
 }
 
 export class ApiError extends Error {
@@ -179,11 +297,17 @@ class ApiClient {
     return response as unknown as T
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseURL}${endpoint}`
 
     try {
-      const response = await fetch(url, options)
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...this.getAuthHeaders(),
+          ...options.headers,
+        },
+      })
       return await this.handleResponse<T>(response)
     } catch (error) {
       if (error instanceof TypeError && error.message.includes('fetch')) {
@@ -197,28 +321,26 @@ class ApiClient {
   }
 
   // 1. POST /login - Authentication
-  async login(credentials: LoginRequest): Promise<LoginResponse> {
+  async login(credentials: LoginRequest): Promise<any> {
     const response = await this.request<any>('/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         login: credentials.login,
         password: credentials.password,
       }),
     })
 
-    // Store JWT token after successful login
+    // Сохраняем JWT токен
     TokenManager.setToken(response.access_token)
 
+    // Возвращаем реальные данные пользователя
     return {
-      token: response.access_token,
-      user: {
-        id: response.user?.id || credentials.login,
-        name: response.user?.name || credentials.login,
-        email: response.user?.email || '',
-      },
+      access_token: response.access_token,
+      token_type: response.token_type,
+      full_name: response.full_name,
+      role: response.role,
+      login: credentials.login, // чтобы знать, кто вошёл
     }
   }
 
@@ -229,10 +351,6 @@ class ApiClient {
 
     return await this.request<UploadResponse>('/upload', {
       method: 'POST',
-      headers: {
-        ...this.getAuthHeaders(),
-        // Don't set Content-Type for FormData
-      },
       body: formData,
     })
   }
@@ -241,9 +359,6 @@ class ApiClient {
   async downloadFile(docId: string): Promise<Blob> {
     const response = await this.request<Response>(`/download/${docId}`, {
       method: 'GET',
-      headers: {
-        ...this.getAuthHeaders(),
-      },
     })
 
     if (response instanceof Response) {
@@ -260,9 +375,6 @@ class ApiClient {
   async downloadAnnotatedFile(docId: string): Promise<Blob> {
     const response = await this.request<Response>(`/download_annotated/${docId}`, {
       method: 'GET',
-      headers: {
-        ...this.getAuthHeaders(),
-      },
     })
 
     if (response instanceof Response) {
@@ -281,7 +393,6 @@ class ApiClient {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...this.getAuthHeaders(),
       },
     })
   }
@@ -292,7 +403,6 @@ class ApiClient {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...this.getAuthHeaders(),
       },
     })
   }
@@ -307,9 +417,6 @@ class ApiClient {
 
     return await this.request<{ message: string }>(`/upload${query}`, {
       method: 'POST',
-      headers: {
-        ...this.getAuthHeaders(),
-      },
       body: formData,
     })
   }
@@ -318,9 +425,6 @@ class ApiClient {
   async downloadFixedPdf(docId: string, occId: string): Promise<Blob> {
     const response = await this.request<Response>(`/download_fixed/${docId}?occ_id=${occId}`, {
       method: 'GET',
-      headers: {
-        ...this.getAuthHeaders(),
-      },
     })
 
     if (response instanceof Response) {
@@ -345,11 +449,128 @@ class ApiClient {
       include_sessions: includeSessions.toString(),
     })
 
-    return await this.request<ProcessAnalysisData>(`/api/process-analysis?${params.toString()}`, {
+    return await this.request<ProcessAnalysisData>(`/process-analysis?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        ...this.getAuthHeaders(),
+      },
+    })
+  }
+
+  // 9.1. GET /export-process-analysis-csv — экспорт анализа в CSV
+  async exportProcessAnalysisCsv(startDate: string, endDate: string): Promise<Blob> {
+    const params = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+    })
+
+    const response = await this.request<Response>(
+      `/export-process-analysis-csv?${params.toString()}`,
+      {
+        method: 'GET',
+      },
+    )
+
+    if (response instanceof Response) {
+      return await response.blob()
+    }
+
+    throw new ApiError({
+      message: 'Invalid response format for CSV export',
+      code: 'INVALID_RESPONSE',
+    })
+  }
+
+  // 10. GET /requirements-stats — статистика по ГОСТ
+  async getRequirementsStats(): Promise<any> {
+    return await this.request<any>('/requirements-stats', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+  }
+
+  // 11. POST /result/{doc_id}/status?status=approved
+  async updateDocumentStatus(
+    docId: string,
+    statusData: StatusUpdateRequest,
+  ): Promise<StatusUpdateResponse> {
+    const params = new URLSearchParams({
+      status: statusData.status,
+    })
+
+    return await this.request<StatusUpdateResponse>(
+      `/result/${docId}/status?${params.toString()}`,
+      {
+        method: 'POST',
+      },
+    )
+  }
+
+  // 12. POST /result/{doc_id}/criterion-status?occ_id=...&error_point=...&status=...&comment=...
+  async updateCriterionStatus(
+    docId: string,
+    criterionData: CriterionStatusUpdateRequest,
+  ): Promise<StatusUpdateResponse> {
+    const params = new URLSearchParams({
+      occ_id: criterionData.occ_id,
+      error_point: criterionData.error_point,
+      status: criterionData.status,
+    })
+
+    if (criterionData.comment) {
+      params.append('comment', criterionData.comment)
+    }
+
+    return await this.request<StatusUpdateResponse>(
+      `/result/${docId}/criterion-status?${params.toString()}`,
+      {
+        method: 'POST',
+      },
+    )
+  }
+
+  // ADMIN ENDPOINTS
+
+  // 13. GET /admin/users - Get all users
+  async getAdminUsers(): Promise<User[]> {
+    return await this.request<User[]>('/admin/users', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+  }
+
+  // 14. POST /admin/reg - Create new user
+  async createUser(userData: CreateUserRequest): Promise<CreateUserResponse> {
+    return await this.request<CreateUserResponse>('/admin/reg', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    })
+  }
+
+  // 15. POST /admin/worktime-settings - Set work time settings
+  async setWorkTimeSettings(settings: WorkTimeSettingsRequest): Promise<WorkTimeSettingsResponse> {
+    return await this.request<WorkTimeSettingsResponse>('/admin/worktime-settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(settings),
+    })
+  }
+
+  // 16. GET /admin/worktime-settings - Get work time settings
+  async getWorkTimeSettings(): Promise<WorkTimeSettingsResponse> {
+    return await this.request<WorkTimeSettingsResponse>('/admin/worktime-settings', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
       },
     })
   }
@@ -390,6 +611,23 @@ export const api = {
   // Analysis
   getProcessAnalysis: (startDate: string, endDate: string, includeSessions = true) =>
     apiClient.getProcessAnalysis(startDate, endDate, includeSessions),
+
+  getRequirementsStats: () => apiClient.getRequirementsStats(),
+
+  updateDocumentStatus: (docId: string, statusData: StatusUpdateRequest) =>
+    apiClient.updateDocumentStatus(docId, statusData),
+  updateCriterionStatus: (docId: string, criterionData: CriterionStatusUpdateRequest) =>
+    apiClient.updateCriterionStatus(docId, criterionData),
+
+  exportProcessAnalysisCsv: (startDate: string, endDate: string) =>
+    apiClient.exportProcessAnalysisCsv(startDate, endDate),
+
+  // Admin functions
+  getAdminUsers: () => apiClient.getAdminUsers(),
+  createUser: (userData: CreateUserRequest) => apiClient.createUser(userData),
+  setWorkTimeSettings: (settings: WorkTimeSettingsRequest) =>
+    apiClient.setWorkTimeSettings(settings),
+  getWorkTimeSettings: () => apiClient.getWorkTimeSettings(),
 }
 
 // Error handling utilities

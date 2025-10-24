@@ -349,24 +349,6 @@
             </div>
           </div>
         </div>
-        <!-- Iterations Timeline Chart -->
-        <div
-          :class="[
-            'p-4 sm:p-6 rounded-lg border shadow-md transition-all duration-300',
-            isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
-          ]"
-        >
-          <h3 :class="['text-lg font-semibold mb-4', isDarkMode ? 'text-white' : 'text-gray-900']">
-            График количества итераций во времени
-          </h3>
-
-          <apexchart
-            type="area"
-            height="400"
-            :options="iterationTimelineOptions"
-            :series="iterationTimelineSeries"
-          />
-        </div>
 
         <!-- Time Analysis Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
@@ -477,7 +459,7 @@
                 <input
                   type="text"
                   v-model="searchQuery"
-                  placeholder="Поиск по названию..."
+                  placeholder="Поиск по названию или имени автора..."
                   :class="[
                     'w-full pl-9 pr-3 py-2 rounded-lg border text-sm transition-colors',
                     isDarkMode
@@ -592,7 +574,10 @@
                         {{ doc.filename }}
                       </p>
                       <p :class="['text-xs', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
-                        {{ formatDate(doc.upload_date) }}
+                        {{ formatDate(doc.upload_date || '') }}
+                      </p>
+                      <p :class="['text-xs', isDarkMode ? 'text-blue-400' : 'text-blue-600']">
+                        Автор: {{ doc.developer_full_name }}
                       </p>
                     </div>
                   </td>
@@ -807,8 +792,112 @@
             </div>
           </div>
         </div>
-      </div>
+        <!-- Authors Section -->
+        <div
+          :class="[
+            'mt-10 p-4 sm:p-6 rounded-lg border',
+            isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200',
+          ]"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
+            <div>
+              <h3 :class="['text-lg font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
+                Авторы документов
+              </h3>
+              <p :class="['text-sm mt-1', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+                Список всех разработчиков за выбранный период
+              </p>
+            </div>
 
+            <!-- Поиск автора -->
+            <div class="relative w-full sm:w-64">
+              <input
+                type="text"
+                v-model="authorSearchQuery"
+                placeholder="Поиск автора..."
+                :class="[
+                  'w-full pl-9 pr-3 py-2 rounded-lg border text-sm transition-colors',
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500',
+                ]"
+              />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="absolute left-2.5 top-2.5 w-4 h-4"
+                :class="isDarkMode ? 'text-gray-400' : 'text-gray-500'"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 103.6 3.6a7.5 7.5 0 0013.05 13.05z"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <!-- Список авторов -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div
+              v-for="author in paginatedAuthors"
+              :key="author.name"
+              :class="[
+                'group p-4 rounded-xl border cursor-pointer hover:shadow-lg transition relative overflow-hidden',
+                isDarkMode
+                  ? 'bg-gray-700 border-gray-600 hover:bg-gray-600'
+                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100',
+              ]"
+              @click="goToAuthorStats(author)"
+            >
+              <div class="flex flex-col space-y-1">
+                <p :class="['font-medium text-base', isDarkMode ? 'text-white' : 'text-gray-900']">
+                  {{ author.name }}
+                </p>
+                <p :class="['text-xs', isDarkMode ? 'text-gray-400' : 'text-gray-600']">
+                  Документов: {{ author.count }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Пагинация -->
+          <div class="flex items-center justify-between mt-6" v-if="authors && authors.length">
+            <div class="text-sm" :class="isDarkMode ? 'text-gray-400' : 'text-gray-600'">
+              Показано {{ authorStartIndex + 1 }}–{{ authorEndIndex }} из {{ authors.length }}
+            </div>
+            <div class="flex space-x-2">
+              <button
+                @click="previousAuthorPage"
+                :disabled="authorCurrentPage === 1"
+                :class="[
+                  'px-3 py-1 rounded text-sm',
+                  isDarkMode
+                    ? 'bg-gray-700 text-gray-300 disabled:bg-gray-800 disabled:text-gray-600'
+                    : 'bg-gray-200 text-gray-700 disabled:bg-gray-100 disabled:text-gray-400',
+                ]"
+              >
+                Назад
+              </button>
+              <button
+                @click="nextAuthorPage"
+                :disabled="authorCurrentPage >= authorTotalPages"
+                :class="[
+                  'px-3 py-1 rounded text-sm',
+                  isDarkMode
+                    ? 'bg-gray-700 text-gray-300 disabled:bg-gray-800 disabled:text-gray-600'
+                    : 'bg-gray-200 text-gray-700 disabled:bg-gray-100 disabled:text-gray-400',
+                ]"
+              >
+                Вперед
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- Empty State -->
       <div
         v-else-if="!isLoading"
@@ -841,7 +930,6 @@ import { ref, inject, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, handleApiError } from '@/services/api'
 import { History, Clock, CheckCircle, RefreshCw, Download, BarChart3 } from 'lucide-vue-next'
-import VueApexCharts from 'vue3-apexcharts'
 
 const isDarkMode = inject('isDarkMode', ref(false))
 const router = useRouter()
@@ -876,6 +964,7 @@ interface ProcessDocument {
   review_duration_hours: number
   iterations: number
   sessions: ProcessSession[]
+  developer_full_name?: string
 }
 
 interface ProcessAnalysisData {
@@ -895,10 +984,8 @@ interface ProcessAnalysisData {
   min_review_duration_minutes: number
   max_fix_duration_hours: number
   min_fix_duration_hours: number
-
   max_review_duration_hours: number
   min_review_duration_hours: number
-
   average_iterations: number
   max_iterations: number
   min_iterations: number
@@ -906,8 +993,9 @@ interface ProcessAnalysisData {
   documents: ProcessDocument[]
 
   iterations_timeline?: {
-    timestamp: string
-    iterations_count: number
+    date: string
+    average_iterations: number
+    total_iterations: number
   }[]
 }
 
@@ -933,7 +1021,11 @@ const filteredDocuments = computed(() => {
   if (!analysisData.value) return []
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return analysisData.value.documents
-  return analysisData.value.documents.filter((doc) => doc.filename.toLowerCase().includes(query))
+  return analysisData.value.documents.filter(
+    (doc: ProcessDocument) =>
+      doc.filename.toLowerCase().includes(query) ||
+      (doc.developer_full_name?.toLowerCase() || '').includes(query),
+  )
 })
 
 // Time ranges for distribution charts
@@ -989,120 +1081,17 @@ const getMaxTotalDuration = computed(() => {
   )
 })
 
-const iterationTimelineSeries = computed(() => {
-  if (!analysisData.value?.iterations_timeline) return []
-
-  const data = analysisData.value.iterations_timeline
-    .map((point) => ({
-      x: new Date(point.timestamp).getTime(),
-      y: point.iterations_count,
-    }))
-    .sort((a, b) => a.x - b.x)
-
-  return [
-    {
-      name: 'Количество итераций',
-      data,
-    },
-  ]
-})
-
-const iterationTimelineOptions = computed(() => ({
-  chart: {
-    type: 'area',
-    height: 400,
-    toolbar: { show: false },
-    zoom: { enabled: false },
-    foreColor: isDarkMode.value ? '#9ca3af' : '#4b5563',
-    background: 'transparent',
-    animations: {
-      enabled: true,
-      easing: 'easeinout',
-      speed: 800,
-    },
-  },
-  stroke: {
-    curve: 'smooth',
-    width: 3,
-  },
-  dataLabels: {
-    enabled: false,
-  },
-  markers: {
-    size: 5,
-    colors: [isDarkMode.value ? '#1f2937' : '#ffffff'],
-    strokeColors: ['#3b82f6'],
-    strokeWidth: 2,
-    hover: { size: 7 },
-  },
-  fill: {
-    type: 'gradient',
-    gradient: {
-      shadeIntensity: 1,
-      opacityFrom: 0.4,
-      opacityTo: 0.1,
-      stops: [0, 90, 100],
-    },
-  },
-  grid: {
-    borderColor: isDarkMode.value ? '#374151' : '#e5e7eb',
-    strokeDashArray: 4,
-  },
-  xaxis: {
-    type: 'datetime',
-    labels: {
-      show: true,
-      rotate: -30,
-      formatter: (val: string) => {
-        const date = new Date(parseInt(val))
-        return date.toLocaleString('ru-RU', {
-          day: '2-digit',
-          month: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      },
-      style: {
-        colors: isDarkMode.value ? '#9ca3af' : '#4b5563',
-        fontSize: '12px',
-      },
-    },
-    title: {
-      text: 'Дата и время',
-      style: {
-        color: isDarkMode.value ? '#9ca3af' : '#4b5563',
-      },
-    },
-  },
-  yaxis: {
-    min: 0,
-    forceNiceScale: true,
-    labels: {
-      style: { colors: isDarkMode.value ? '#9ca3af' : '#4b5563' },
-    },
-    title: {
-      text: 'Количество итераций',
-      style: { color: isDarkMode.value ? '#9ca3af' : '#4b5563' },
-    },
-  },
-  tooltip: {
-    theme: isDarkMode.value ? 'dark' : 'light',
-    x: {
-      formatter: (val: number) =>
-        new Date(val).toLocaleString('ru-RU', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-    },
-    y: {
-      formatter: (val: number) => `${val} ит.`,
-    },
-  },
-  colors: ['#3b82f6'],
-}))
+const getTopDocuments = (count: number) => {
+  if (!analysisData.value) return []
+  return analysisData.value.documents
+    .slice()
+    .sort((a, b) => {
+      const totalA = getDocumentFixDuration(a) + getDocumentReviewDuration(a)
+      const totalB = getDocumentFixDuration(b) + getDocumentReviewDuration(b)
+      return totalB - totalA
+    })
+    .slice(0, count)
+}
 
 // Computed properties for different time units
 const getAverageFixDuration = computed(() => {
@@ -1194,6 +1183,52 @@ const iterationDistribution = computed(() => {
 
   return result
 })
+
+// ---- Authors Section ----
+const authorSearchQuery = ref('')
+const authorCurrentPage = ref(1)
+const authorsPerPage = ref(8)
+
+const authors = computed(() => {
+  if (!analysisData.value) return []
+  const map = new Map<string, number>()
+  analysisData.value.documents.forEach((doc) => {
+    const name = doc.developer_full_name || 'Неизвестный автор'
+    map.set(name, (map.get(name) || 0) + 1)
+  })
+  return Array.from(map.entries()).map(([name, count]) => ({ name, count }))
+})
+
+const filteredAuthors = computed(() => {
+  const q = authorSearchQuery.value.trim().toLowerCase()
+  if (!q) return authors.value
+  return authors.value.filter((a) => a.name.toLowerCase().includes(q))
+})
+
+const authorTotalPages = computed(() =>
+  Math.ceil(filteredAuthors.value.length / authorsPerPage.value),
+)
+
+const authorStartIndex = computed(() => (authorCurrentPage.value - 1) * authorsPerPage.value)
+const authorEndIndex = computed(() =>
+  Math.min(authorStartIndex.value + authorsPerPage.value, filteredAuthors.value.length),
+)
+
+const paginatedAuthors = computed(() =>
+  filteredAuthors.value.slice(authorStartIndex.value, authorEndIndex.value),
+)
+
+const previousAuthorPage = () => {
+  if (authorCurrentPage.value > 1) authorCurrentPage.value--
+}
+
+const nextAuthorPage = () => {
+  if (authorCurrentPage.value < authorTotalPages.value) authorCurrentPage.value++
+}
+
+const goToAuthorStats = (author: { name: string }) => {
+  router.push(`/analysis/author/${encodeURIComponent(author.name)}`)
+}
 
 // Methods
 const getDocumentFixDuration = (doc: ProcessDocument): number => {
@@ -1429,16 +1464,9 @@ const goToHistory = () => {
   router.push('/history')
 }
 
-/*************  ✨ Windsurf Command ⭐  *************/
-/**
- * Redirects to the result page for a given document ID.
- *
- * @param {string} docId - The ID of the document to view the result for.
- */
-/*******  35b33c85-6328-42f8-8ae1-a0740a77a38b  *******/
 const goToResult = (docId: string) => {
   if (!docId) return
-  router.push(`/result/${docId}`)
+  router.push(`/result/norm-controller/${docId}`)
 }
 
 // Lifecycle

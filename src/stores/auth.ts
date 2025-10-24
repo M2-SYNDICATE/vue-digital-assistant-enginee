@@ -6,6 +6,8 @@ export interface User {
   id: string
   name: string
   email: string
+  role: string // 👈 добавлено
+  full_name: string // 👈 добавлено
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -35,7 +37,6 @@ export const useAuthStore = defineStore('auth', () => {
   const login = (userData: User) => {
     user.value = userData
     isAuthenticated.value = true
-    // Store user data for persistence
     localStorage.setItem('user', JSON.stringify(userData))
   }
 
@@ -43,9 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = () => {
     user.value = null
     isAuthenticated.value = false
-    // Clear stored user data
     localStorage.removeItem('user')
-    // Clear JWT token via API
     api.logout()
   }
 
@@ -54,7 +53,7 @@ export const useAuthStore = defineStore('auth', () => {
     return api.isAuthenticated()
   }
 
-  // Автоматически инициализировать аутентификацию при создании store
+  // Auto initialize
   initAuth()
 
   return {

@@ -220,26 +220,33 @@ const clearSelection = () => {
 }
 
 const viewDocument = (documentId: string) => {
-  router.push(`/result/${documentId}`)
+  router.push(`/result/norm-controller/${documentId}`)
 }
 
 // Функция для открытия PDF с аннотациями
 const openAnnotatedPdf = (document: ViolationDocument, event: Event) => {
   event.stopPropagation()
-
-  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin
-
-  const url = document.violationDetails.pdfAnnotationUrl || document.pdfUrl || null
-
-  if (url) {
-    const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`
-    console.log('🧭 Открываю PDF:', fullUrl)
-    window.open(fullUrl, '_blank')
+  if (document.violationDetails.pdfAnnotationUrl) {
+    window.open(document.violationDetails.pdfAnnotationUrl, '_blank')
+  } else if (document.pdfUrl) {
+    window.open(document.pdfUrl, '_blank')
   } else {
     alert('PDF документ недоступен')
   }
 }
 
+// Функция для скачивания оригинального PDF
+const downloadOriginalPdf = (doc: ViolationDocument, event: Event) => {
+  event.stopPropagation()
+  if (doc.pdfUrl) {
+    const link = document.createElement('a') // теперь обращаемся к window.document
+    link.href = doc.pdfUrl
+    link.download = doc.fileName
+    link.click()
+  } else {
+    alert('Оригинальный документ недоступен')
+  }
+}
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('ru-RU', {
     year: 'numeric',

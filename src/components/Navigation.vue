@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { inject, ref } from 'vue'
+import { inject, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+
 import {
   Menu,
   X,
@@ -79,6 +80,50 @@ const handleLogout = () => {
 const isActiveRoute = (path: string) => {
   return route.path === path
 }
+
+const filteredNavigation = computed(() => {
+  const role = authStore.user?.role
+
+  if (role === 'developer') return navigationItems
+
+  if (role === 'norm_controller') {
+    return [
+      {
+        name: 'История проверок',
+        path: '/history/norm-controller',
+        icon: History,
+      },
+      {
+        name: 'Анализ процесса',
+        path: '/process-analysis/norm-controller',
+        icon: BarChart3,
+      },
+      {
+        name: 'Статистика по замечаниям',
+        path: '/statistics-on-comments/norm-controller',
+        icon: FileText,
+      },
+    ]
+  }
+
+  if (role === 'admin') {
+    return [
+      {
+        name: 'Админ-панель',
+        path: '/admin',
+        icon: User,
+      },
+    ]
+  }
+
+  return [
+    {
+      name: 'Главная',
+      path: '/',
+      icon: Home,
+    },
+  ]
+})
 </script>
 
 <template>
@@ -112,7 +157,7 @@ const isActiveRoute = (path: string) => {
 
         <!-- Десктопная навигация -->
         <div class="hidden md:flex items-center space-x-1">
-          <div v-for="item in navigationItems" :key="item.path" class="relative">
+          <div v-for="item in filteredNavigation" :key="item.path" class="relative">
             <router-link
               :to="item.path"
               :class="[
@@ -160,8 +205,11 @@ const isActiveRoute = (path: string) => {
               <User class="w-4 h-4" />
             </div>
             <div class="flex flex-col">
-              <span :class="['text-sm font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
-                {{ authStore.user?.name || 'Пользователь' }}
+              <span :class="['text-sm font-semibold', isDarkMode ? 'text-white' : 'text-gray-900']">
+                {{ authStore.user?.full_name || 'Пользователь' }}
+              </span>
+              <span :class="['text-xs', isDarkMode ? 'text-gray-400' : 'text-gray-500']">
+                {{ authStore.user?.role }} • {{ authStore.user?.name }}
               </span>
               <button
                 @click="handleLogout"
@@ -212,7 +260,7 @@ const isActiveRoute = (path: string) => {
       >
         <div class="px-4 py-4 space-y-2">
           <!-- Мобильная навигация -->
-          <div v-for="item in navigationItems" :key="item.path" class="block">
+          <div v-for="item in filteredNavigation" :key="item.path" class="block">
             <router-link
               :to="item.path"
               @click="closeMobileMenu"
@@ -247,11 +295,16 @@ const isActiveRoute = (path: string) => {
                 <User class="w-5 h-5" />
               </div>
               <div class="flex-1">
-                <p :class="['text-base font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
-                  {{ authStore.user?.name || 'Пользователь' }}
+                <p
+                  :class="['text-base font-semibold', isDarkMode ? 'text-white' : 'text-gray-900']"
+                >
+                  {{ authStore.user?.full_name || 'Пользователь' }}
                 </p>
                 <p :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-500']">
-                  {{ authStore.user?.email }}
+                  Логин: {{ authStore.user?.name }}
+                </p>
+                <p :class="['text-sm', isDarkMode ? 'text-gray-400' : 'text-gray-500']">
+                  Роль: {{ authStore.user?.role }}
                 </p>
               </div>
             </div>

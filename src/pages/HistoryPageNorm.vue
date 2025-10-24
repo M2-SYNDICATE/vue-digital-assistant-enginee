@@ -26,11 +26,13 @@ interface CheckResult {
   uploadDate: string
   status: 'processing' | 'completed'
   correctionStatus: 'processing' | 'rejected' | 'approved' | 'removed' | '-'
-  violations: never[] // пустой массив, так как детали нарушений не приходят в истории
+  violations: never[]
   complianceScore: number
   totalViolations: number
   errorCounts: ErrorCounts
   correctionStatusAuthor?: string
+  developerLogin: string
+  developerFullName: string
 }
 
 const isDarkMode = inject('isDarkMode', ref(false))
@@ -76,18 +78,16 @@ const loadHistory = async () => {
         correctionStatus: (() => {
           switch (item.status) {
             case 'approved':
-              return 'approved' // Согласовано
+              return 'approved'
             case 'rejected':
-              return 'rejected' // Отклонено
+              return 'rejected'
             case 'removed':
-              return 'removed' // Снято
+              return 'removed'
             default:
-              return '-' // Любые другие статусы — просто "-"
+              return '-'
           }
         })(),
-
         correctionStatusAuthor: item.status === 'rejected' ? item.status_author || '' : '',
-
         violations: [],
         complianceScore: calculatedScore,
         totalViolations: item.total_violations,
@@ -95,6 +95,8 @@ const loadHistory = async () => {
           ...item.error_counts,
           total: item.error_counts?.total ?? item.total_violations ?? 0,
         },
+        developerLogin: item.developer_login ?? '',
+        developerFullName: item.developer_full_name ?? '',
       }
     })
 
@@ -185,7 +187,12 @@ const filteredResults = computed(() => {
   // Поиск
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
-    resultsData = resultsData.filter((result) => result.fileName.toLowerCase().includes(query))
+    resultsData = resultsData.filter(
+      (result) =>
+        result.fileName.toLowerCase().includes(query) ||
+        result.developerFullName.toLowerCase().includes(query) ||
+        result.developerLogin.toLowerCase().includes(query),
+    )
   }
 
   // Фильтр по статусу проверки
@@ -245,7 +252,7 @@ const handleFiltersReset = () => {
 
 // Навигация
 const viewResult = (resultId: string) => {
-  router.push(`/result/${resultId}`)
+  router.push(`/result/norm-controller/${resultId}`)
 }
 
 const goToHome = () => {
@@ -444,26 +451,6 @@ const formatDateMobile = (dateString: string) => {
             Все результаты анализа документации
           </p>
         </div>
-        <button
-          @click="goToHome"
-          class="inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm sm:text-base min-h-[44px]"
-        >
-          <svg
-            class="w-4 h-4 sm:w-5 sm:h-5 mr-2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-            />
-          </svg>
-          <span class="hidden sm:inline">Новая проверка</span>
-          <span class="sm:hidden">Новая</span>
-        </button>
       </div>
     </div>
 
@@ -497,7 +484,7 @@ const formatDateMobile = (dateString: string) => {
       <div class="max-w-md mx-auto sm:mx-0">
         <SearchInput
           v-model="searchQuery"
-          placeholder="Поиск по названию файла..."
+          placeholder="Поиск по названию файла и имени автора..."
           @search="handleSearch"
           @clear="handleClearSearch"
         >
@@ -611,6 +598,14 @@ const formatDateMobile = (dateString: string) => {
               <h3 :class="['font-medium', isDarkMode ? 'text-white' : 'text-gray-900']">
                 {{ result.fileName }}
               </h3>
+              <p
+                :class="[
+                  'text-sm mt-0.5 font-medium',
+                  isDarkMode ? 'text-blue-400' : 'text-blue-600',
+                ]"
+              >
+                {{ result.developerFullName }}
+              </p>
               <div class="flex items-center space-x-4 mt-1">
                 <span
                   :class="[
@@ -716,6 +711,14 @@ const formatDateMobile = (dateString: string) => {
                 >
                   {{ result.fileName }}
                 </h3>
+                <p
+                  :class="[
+                    'text-xs mt-0.5 truncate',
+                    isDarkMode ? 'text-blue-400' : 'text-blue-600',
+                  ]"
+                >
+                  {{ result.developerFullName }}
+                </p>
                 <div class="flex items-center space-x-2 mt-1">
                   <span
                     :class="[
